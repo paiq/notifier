@@ -9,7 +9,7 @@
 	<key>CFBundleIconFile</key>
 	<string>app.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.implicit-link.Notifier</string>
+	<string>com.implicit-link.WebNoti</string>
 	<key>CFBundleName</key>
 	<string>Notifier</string>
 	<key>CFBundlePackageType</key>

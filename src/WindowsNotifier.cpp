@@ -18,6 +18,9 @@
 
 #define _WIN32_IE 0x0500
 
+#define USERAGENT SITENAME " Notifier 0.9.9 (Windows)"
+	// Used by server to determine whether we should update 
+
 #ifdef DEBUG 
 	#define UPDATEURL "http://" UPDATEHOST "/d/WebNoti_dbg.exe"
 #else
@@ -100,8 +103,6 @@ class WindowsNotifier : public Notifier // {{{
 public:
 	WindowsNotifier(boost::asio::io_service& ioService_) :
 			Notifier(ioService_), popups(true), blinkIcon(0), blinking(false), blinkTimer() {
-		
-		userAgent = std::string(SITENAME " Notifier 0.9.7 (Windows)");
 	}
 
 	void togglePopups()
@@ -420,8 +421,6 @@ void cbTrayNotify(HWND hwnd, WPARAM w, LPARAM l)
 {
 	if (w != NOTI_TRAYID) return;
 
-	std::cout << "tray noti: " << l << "\n";
-	
 	if (l == WM_LBUTTONDOWN)
 		notiRunloop.post(boost::bind(&WindowsNotifier::enableOrOpen, &notifier));
 	else if (l == WM_RBUTTONDOWN) {

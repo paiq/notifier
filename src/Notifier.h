@@ -87,14 +87,14 @@ private:
 			needUpdate(msg);
 		}
 		else if (e == ILMPERR_PROTOCOL) {
-			std::cerr << "Protocol error: " << msg << ". " << (retries--) << " tries left before giving up.\n";
+			std::cerr << "Protocol error: " << msg << ". " << (retries--) << " tries left before giving up." << std::endl;
 			if (retries > 0) connect();
 		}
 		else { //(e == ILMPERR_NETWORK)
 			if (ilmp && ilmp->wasConnected) retryTime = 5;
 			else retryTime = std::min(60*10, retryTime*2); // Maximum of 10 minutes.
 
-			std::cerr << "Ilmp error: " << msg << "; reconnecting in " << retryTime << " seconds.\n";
+			std::cerr << "Ilmp error: " << msg << "; reconnecting in " << retryTime << " seconds." << std::endl;
 			std::stringstream connectErrorMsg;
 			connectErrorMsg << "Fout bij verbinden: " << msg;
 			connectError = connectErrorMsg.str();
@@ -275,8 +275,11 @@ private:
 	}
 
 public:
+#ifndef USERAGENT
+#define USERAGENT "Notifier [unknown; " __DATE__ ", " __TIME__ "]"
+#endif
 	Notifier(boost::asio::io_service& ioService_) : ioService(ioService_), isEnabled(true),
-			userAgent("Notifier [unknown; " __DATE__ ", " __TIME__ "]"), cookie(""), userId(0),
+			userAgent(USERAGENT), cookie(""), userId(0),
 			userName(""), unreadMsgs(0), maleUsers(0), femaleUsers(0), onlineUsers(0),
 			status(s_disconnected), retryTime(5), retries(3), userCb(0), reconnectTimer(),
 			isUpdating(false) {
@@ -336,7 +339,13 @@ public:
 
 	void about()
 	{
-		notify(SITEEXTNAME, SITENAME " Notifier\nCompiled at " __DATE__ ", " __TIME__ "\n\nCopyright 2005-2010 Implicit-Link", "http://opensource.implicit-link.com/", false);
+		std::stringstream msg;
+		msg << SITENAME << " Notifier\n"
+			<< "User-Agent \"" << userAgent << "\"\n" 
+			<< "Compiled at " << __DATE__ << ", " << __TIME__ << "\n"
+			<< "\n"
+			<< "Copyright 2005-2010 Implicit-Link";
+		notify(SITEEXTNAME, msg.str(), "http://opensource.implicit-link.com/", false);
 	}
 	
 	virtual void dataChanged() {
@@ -513,7 +522,12 @@ public:
 
 	void updaterRun(const std::string& _url, FetchCallback gotUpdateCb)
 	{
+#ifndef UPDATEURL
+		if (!_url.size()) return;
+		std::string url(_url);
+#else
 		std::string url(_url.size() ? _url : std::string(UPDATEURL));
+#endif
 		
 		std::cout << "Fetching update from " << url << std::endl;
 		
@@ -591,7 +605,7 @@ public:
 				
 				gotUpdateCb(blobBuf);
 			}
-			else std::cerr << "Updater error: uh-oh. Verification failed. Verify routine returned " << verify << std::endl;
+			else std::cerr << "Updater error: verification failed; routine returned " << verify << std::endl;
 		}
 		else std::cerr << "Updater: unable to download binary" << std::endl;
 		

@@ -19,6 +19,9 @@
 #import <Cocoa/Cocoa.h>
 #import <GrowlApplicationBridge.h>
 
+#define USERAGENT SITENAME " Notifier 0.9.9 (Mac)"
+	// Used by server to determine whether we should update 
+
 #ifdef DEBUG 
 	#define UPDATEURL "http://" UPDATEHOST "/d/WebNoti_dbg.app.tbz2"
 #else
@@ -127,8 +130,6 @@ public:
 			Notifier(ioService_), popups(false), tooltipArray(0), blinkIcon(0),
 			blinking(false), blinkTimer(), initTime(0) {
 				
-		userAgent = std::string(SITENAME " Notifier 0.9.4 (Mac)");
-
 		ioService.post(boost::bind(&MacNotifier::initialize, this));
 	}
 
@@ -456,6 +457,11 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, false, true));
 }
 
+- (void) menuAboutHandler:(id)sender
+{
+	notiRunloop.post(boost::bind(&Notifier::about, &notifier));
+}
+
 - (void) menuPopupsHandler:(id)sender
 {
 	notiRunloop.post(boost::bind(&MacNotifier::togglePopups, &notifier));
@@ -489,6 +495,9 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	NSLog(@"menuOpts: %@", menuOpts);
 #endif
 
+	// Check if the option key is pressed. This will reveal some additional features. >= 10.6 only.
+	bool optionKey = [NSEvent respondsToSelector:@selector(modifierFlags)] && ((int)[NSEvent modifierFlags] & NSAlternateKeyMask);
+
 	int status = [[menuOpts objectForKey: @"status"] intValue];
 	
 	NSMenuItem *item = 0;
@@ -520,14 +529,12 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 		if ([[menuOpts objectForKey: @"popups"] boolValue]) [item setState: NSOnState];
 	}
 
+	if (optionKey)
+		[menu addItemWithTitle: @"Versie informatie" action: @selector(menuAboutHandler:) keyEquivalent: @""];
+
 	[menu addItemWithTitle: @"Afsluiten" action: @selector(menuQuitHandler:) keyEquivalent: @""];
 	
-	bool optionKey = false;
-	if ([NSEvent respondsToSelector:@selector(modifierFlags)])
-		// Check if the option key is pressed. This will reveal our hidden feature. >= 10.6 only.
-		optionKey = (int)[NSEvent modifierFlags] & NSAlternateKeyMask;
-
-	if (optionKey || iTunesToMotto) {
+	if (status == s_enabled && (optionKey || iTunesToMotto)) {
 		[menu addItem: [NSMenuItem separatorItem]];
 		
 		item = [menu addItemWithTitle: @"iTunes ⇢ what's up?!" action:@selector(iTunesSettingChanged:) keyEquivalent:@""];

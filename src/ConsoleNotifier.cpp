@@ -16,6 +16,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define USERAGENT SITENAME " Notifier 0.1 (Linux)"
+
 #include <unistd.h>
 #include <string>
 #include <list>
@@ -32,11 +34,11 @@ class ConsoleNotifier : public Notifier
 public:
 	ConsoleNotifier(boost::asio::io_service& ioService_) : Notifier(ioService_) {}
 
-private:
-	virtual void notify(const std::string& title, const std::string& text)
+	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky)
 	{
 		std::cout	<< "Notify:  " << title << std::endl
-					<< "         " << text << std::endl;
+					<< "         " << text << std::endl
+					<< "        (" << url << ")" << std::endl;
 	}
 
 	virtual void openUrl(const std::string& url)
@@ -77,7 +79,7 @@ int main()
 	sa.sa_handler = &handle_sigint;
 	sigaction(SIGINT, &sa, NULL);
 
-	runloop.post(boost::bind(&Notifier::setEnabled, &notifier, true));
+	runloop.post(boost::bind(&Notifier::setEnabled, &notifier, true, false));
 	runloop.run();
 	
 	std::cout << "ConsoleNotifier runloop complete" << std::endl;

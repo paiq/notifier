@@ -42,6 +42,8 @@ LFLAGS.win32    := $(LFLAGS) -lws2_32
 LFLAGS.win32.release    := $(LFLAGS.release) -lws2_32 -mwindows
 LFLAGS.darwin			:= $(LFLAGS) -framework Cocoa -Fext/ -framework $(DARWIN_GRAWL)
 LFLAGS.darwin.release	:= $(LFLAGS.release) -framework Cocoa -Fext/ -framework $(DARWIN_GRAWL)
+LFLAGS.linux			:= $(LFLAGS) -lboost_thread
+LFLAGS.linux.release	:= $(LFLAGS.release) -lboost_thread
 
 DSA_VERIFY_SRCS := $(wildcard ext/dsa_verify/*.c)
 
@@ -108,15 +110,16 @@ build/win32-%/WindowsNotifier.o: src/WindowsNotifier.cpp src/Notifier.h ext/ilmp
 
 build/win32-%/WindowsNotifierRes.o: src/WindowsNotifier.cpp
 	$(if $(isWin32Native), \
-		(echo 1000 ICON "res/normal.paiq.ico" & \
-		echo 2000 ICON "res/gray.paiq.ico" & \
-		echo 2001 ICON "res/users.paiq.ico" & \
-		echo 2002 ICON "res/msg.paiq.ico"), \
+		(echo 1000 ICON "res/normal.$(call getSite,$*).ico" & \
+		echo 2000 ICON "res/gray.$(call getSite,$*).ico" & \
+		echo 2001 ICON "res/users.$(call getSite,$*).ico" & \
+		echo 2002 ICON "res/msg.$(call getSite,$*).ico"), \
 		perl -nle 'print "$$1 ICON $$2" if /([0-9]+)\s*\/\/\s*\$$RESOURCE\$$\s*(\".*\")\s*$$/' < $< \
 				| sed 's/$$SITE/$(call getSite,$*)/g' ) \
 			| $(call var,WINDRES,win32,$*) -o $@
 
- # TODO: Find something for perlless win32native here, perhaps using findstr?.
+# TODO: Implement something for win32native here:
+#       http://stackoverflow.com/questions/3389902/advanced-grep-perl-like-text-file-processing-on-win32
 
 ### darwin builds WebNoti.app ###
 
@@ -148,12 +151,12 @@ build/darwin-%/WebNoti.app/Contents/MacOS/Notifier: build/darwin-%/MacNotifier.o
 ### linux builds ConsoleNotifier ###
 
 build/linux-%/ConsoleNotifier: build/linux-%/ConsoleNotifier.o $(DSA_VERIFY_SRCS)
-	$(call var,GPP,linux,$*) $(var,LFLAGS,linux,$*) $^ -o $@
+	$(call var,GPP,linux,$*) $(call var,LFLAGS,linux,$*) $^ -o $@
 
 build/linux-%/ConsoleNotifier.o: src/ConsoleNotifier.cpp src/Notifier.h ext/ilmpclient/*.h
 	$(call var,GPP,linux,$*) \
 		$(call var,CFLAGS,linux,$*) \
-		-include src/SiteSpecifics.$(call getSite,$*).h \
+		-c -o $@ -include src/SiteSpecifics.$(call getSite,$*).h \
 		$<
 
 define TargetTempl
