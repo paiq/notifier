@@ -1,6 +1,6 @@
 [submodule "ext/ilmpclient"]
 	path = ext/ilmpclient
-	url = http://github.com/ImplicitLink/ilmpclient
+	url = http://github.com/ImplicitLink/ilmpclient.git
 [submodule "ext/dsa_verify"]
 	path = ext/dsa_verify
-	url = http://github.com/ImplicitLink/dsa_verify
+	url = http://github.com/ImplicitLink/dsa_verify.git

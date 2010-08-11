@@ -19,7 +19,7 @@
 #import <Cocoa/Cocoa.h>
 #import <GrowlApplicationBridge.h>
 
-#define USERAGENT SITENAME " Notifier 0.9.9.4 (Mac)"
+#define USERAGENT SITENAME " Notifier 0.9.9.6 (Mac)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -69,88 +69,136 @@
 
 boost::asio::io_service notiRunloop;
 
+void uiRunloopPost(SEL selector, ...)
+{
+	// Dispatches to UI runloop method that accepts an NSArray* with options.
+	NSMutableArray *options = [[NSMutableArray alloc] init];
+
+	va_list optionsList;
+	va_start(optionsList, selector);
+	while (id option = va_arg(optionsList, id))
+    	[options addObject: option];
+	va_end(optionsList);
+
+	[[NSApp delegate] performSelectorOnMainThread: selector
+	                                   withObject: options
+	                                waitUntilDone: NO];
+	
+	[options release];
+}
+
 class MacNotifier : public Notifier
 {
 	bool popups;
 	
+	// Delegating menu updates {{{
 	NSMutableArray *tooltipArray;
-	
 	void updateMenu()
 	{
 		NSNumber *nsStatus = [[NSNumber alloc] initWithInt: status];
 		NSNumber *nsPopups = [[NSNumber alloc] initWithBool: popups];
 		
-		NSDictionary *opts = [[NSDictionary alloc] initWithObjectsAndKeys:
-				tooltipArray, @"tooltip",
-				nsPopups, @"popups",
-				nsStatus, @"status", nil];
+		uiRunloopPost(@selector(setMenu:), nsStatus, nsPopups, tooltipArray, 0);
 
 		[nsPopups release];
 		[nsStatus release];
-		
-		[[NSApp delegate] performSelectorOnMainThread: @selector(setMenu:)
-		                                   withObject: opts
-		                                waitUntilDone: NO];
-		
-		[opts release];
 	}
+	// }}}
 	
+	// Delegating icon updates {{{
+	NSString *iconIcon;
+	NSString *iconTitle;
 	void setIcon(NSString *icon)
 	{
-		[[NSApp delegate] performSelectorOnMainThread: @selector(setIcon:)
-		                                   withObject: icon
-		                                waitUntilDone: NO];
+		iconIcon = [icon retain];
+		uiRunloopPost(@selector(setIcon:), iconIcon, iconTitle, 0);
+	}
+
+	void setIconTitle(NSString *title)
+	{
+		iconTitle = [title retain];
+		uiRunloopPost(@selector(setIcon:), iconIcon, iconTitle, 0);
 	}
 	
-	NSString *blinkIcon;
-	bool blinking;
 	std::auto_ptr<boost::asio::deadline_timer> blinkTimer;
-	void onBlinkTimer(const boost::system::error_code& err) {
-		if (err == boost::asio::error::operation_aborted)
+	void onBlink(const boost::system::error_code& err, NSString *nextIcon, NSString *curIcon) {
+		if (err == boost::asio::error::operation_aborted) {
+			[nextIcon release];
+			[curIcon release];
 			return;
+		}
 
-		setIcon(blinking ? blinkIcon : ICON_NORMAL);
-		
-		blinking = !blinking;
+		setIcon(nextIcon);
 		
 		blinkTimer.reset(new boost::asio::deadline_timer(ioService));
 		blinkTimer->expires_from_now(boost::posix_time::seconds(1));
-		blinkTimer->async_wait(boost::bind(&MacNotifier::onBlinkTimer, this, boost::asio::placeholders::error));
+		blinkTimer->async_wait(boost::bind(&MacNotifier::onBlink, this,
+				boost::asio::placeholders::error, curIcon, nextIcon));
 	}
+	// }}}
 	
 	NSDate *initTime;
-	void initialize() {
-		initTime = [[NSDate alloc] init];
-		popups = (getConfigValue("popups") == "true");
-		updateMenu();
-	}
-	
+
 public:
 	MacNotifier(boost::asio::io_service& ioService_) :
-			Notifier(ioService_), popups(false), tooltipArray(0), blinkIcon(0),
-			blinking(false), blinkTimer(), initTime(0) {
-				
-		ioService.post(boost::bind(&MacNotifier::initialize, this));
+			Notifier(ioService_), popups(false), tooltipArray(0), iconIcon(ICON_GRAY), iconTitle(@""),
+			blinkTimer(), initTime(0) {
 	}
 
 	~MacNotifier()
 	{
+		// Can't cleanup blinkTimer here, but instances are not destroyed anyway.
 		[initTime release];
-		[blinkIcon release];
 		[tooltipArray release];
+		[iconIcon release];
+		[iconTitle release];
 	}
 	
 	void togglePopups()
 	{
 		popups = !popups;
-		updateMenu();
 		setConfigValue("popups", popups ? "true" : "false");
+		updateMenu();
 	}
 	
 	void setMotdSong(std::string& motd)
 	{
 		if (status != s_enabled) return;
 		(IlmpCommand(ilmp.get(), "User.setMotdSong") << motd).send();
+	}
+	
+	virtual void initialize() {
+		initTime = [[NSDate alloc] init];
+		popups = (getConfigValue("popups") == "true");
+		Notifier::initialize();
+		updateMenu();
+	}
+	
+	virtual void dataChanged()
+	{
+		Notifier::dataChanged();
+		
+		// Additionally update our menu icon title.
+		if (status == s_enabled && unreadMsgs) {
+			NSString *title = [[NSString alloc] initWithFormat: @"%d", unreadMsgs];
+			setIconTitle(title);
+			[title release];
+		}
+		else setIconTitle(@"");
+	}
+	
+	virtual void openUrl(const std::string& url)
+	{
+		NSString *url0 = [[NSString alloc] initWithStdString:url];
+#ifdef DEBUG
+		NSLog(@"openUrl: %@", url0);
+#endif
+		
+		NSURL *url1 = [[NSURL alloc] initWithString:url0];
+		[url0 release];
+		
+		[[NSWorkspace sharedWorkspace] openURL:url1];
+		[url1 release];
 	}
 	
 	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool force)
@@ -164,57 +212,28 @@ public:
 		NSString *nsUrl = [[NSString alloc] initWithStdString: url];
 		NSNumber *nsSticky = [[NSNumber alloc] initWithBool: sticky];
 		
-		NSDictionary *opts = [[NSDictionary alloc] initWithObjectsAndKeys:
-				nsTitle, @"title",
-				nsText, @"text",
-				nsUrl, @"url", 
-				nsSticky, @"sticky", nil];
+		uiRunloopPost(@selector(notify:), nsTitle, nsText, nsUrl, nsSticky, 0);
 		
 		[nsTitle release];
 		[nsText release];
 		[nsUrl release];
 		[nsSticky release];
-		
-		[[NSApp delegate] performSelectorOnMainThread: @selector(notify:)
-		                                   withObject: opts
-		                                waitUntilDone: NO];
-		
-		[opts release];
 	}
 	
-	virtual void statusChanged()
+	virtual void icon(Icon i)
 	{
-		NSString *newBlinkIcon = 0;
-
-		if (unreadMsgs) newBlinkIcon = ICON_MSG;
-		else if (users.size()) setIcon(ICON_USERS);
-		else if (status == s_enabled) setIcon(ICON_NORMAL);
-		else setIcon(ICON_GRAY);
-		
-		if (newBlinkIcon) {
-			[blinkIcon release];
-			blinkIcon = newBlinkIcon;
-			blinking = false;
-			onBlinkTimer(boost::system::error_code()); // Will replace the old timer
-		}
-		else if (!newBlinkIcon)
-			blinkTimer.reset();
-		
-		updateMenu();
-	}
-	
-	virtual void openUrl(const std::string& url)
-	{
-		NSString *url0 = [[NSString alloc] initWithStdString:url];
 #ifdef DEBUG
-		NSLog(@"openUrl: %@", url0);
+		NSLog(@"icon: %d", i);
 #endif
+		blinkTimer.reset();
 		
-		NSURL *url1 = [[NSURL alloc] initWithString:url0];
-		[url0 release];
-		
-		bool success = [[NSWorkspace sharedWorkspace] openURL:url1];
-		[url1 release];
+		if (i == i_disabled) setIcon(ICON_GRAY);
+		else if (i == i_users) setIcon(ICON_USERS);
+		else if (i == i_normal) setIcon(ICON_NORMAL);
+		else {
+			setIcon(ICON_MSG);
+			onBlink(boost::system::error_code(), ICON_NORMAL, ICON_MSG);
+		}
 	}
 	
 	virtual void tooltip(const std::list<std::string>& items)
@@ -285,7 +304,7 @@ public:
 	
 	virtual void needUpdate(const std::string& url)
 	{
-		updaterRun(url, boost::bind(&MacNotifier::installUpdate, this, _1));
+		//updaterRun(url, boost::bind(&MacNotifier::installUpdate, this, _1));
 	}
 	
 	void installUpdate(boost::asio::streambuf* binary)
@@ -405,7 +424,7 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 > {
 	NSStatusItem *statusItem;
 	NSMenu *menu;
-	NSDictionary *menuOpts;
+	NSArray *menuOpts;
 	
 	bool menuOpened;
 	bool iTunesToMotto;
@@ -414,19 +433,19 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 
 @implementation AppDelegate
 
-- (void) notify:(NSDictionary *)opts
+- (void) notify:(NSArray *)opts
 {
 #ifdef DEBUG
 	NSLog(@"notify: %@", opts);
 #endif
 
-	NSString* title = [opts objectForKey: @"title"];
-	NSString* text = [opts objectForKey: @"text"];
-	NSString* url = [opts objectForKey: @"url"];
-	NSNumber* sticky = [opts objectForKey: @"sticky"];
+	NSString* title		= [opts objectAtIndex: 0];
+	NSString* text		= [opts objectAtIndex: 1];
+	NSString* url		= [opts objectAtIndex: 2];
+	NSNumber* sticky	= [opts objectAtIndex: 3];
 
 	if (![title length] || ![text length]) return;
-		// Growl does not seem to support removing notifications (!?)
+		// Growl does not support removing notifications (!?)
 
 	[GrowlApplicationBridge notifyWithTitle: title
 	                            description: text
@@ -438,18 +457,26 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	                             identifier: @"notification"];
 }
 
-- (void) setIcon:(NSString *)icon 
+- (void) setIcon:(NSArray *)opts
 {
+	NSLog(@"setIcon! %@", opts);
+	NSString* icon = [opts objectAtIndex: 0];
+	NSString* text = [opts objectAtIndex: 1];
+	
 	NSImage *i = [NSImage imageNamed:icon];
 	[i setSize:NSMakeSize(20, 20)];
 	[statusItem setImage: i];
+	[statusItem setTitle: text ? text : @""];
 }
 
 // Menu rendering and handling {{{
-- (void) menuOpenHandler:(id)sender
+#define HANDLER(dm, nm) - (void) menu ## dm ## Handler:(id)sender { notiRunloop.post(boost::bind(&Notifier::nm, &notifier)); }
+HANDLER(Open, open)
+
+/*- (void) menuOpenHandler:(id)sender
 {
 	notiRunloop.post(boost::bind(&Notifier::open, &notifier));
-}
+}*/
 
 - (void) menuLoginHandler:(id)sender
 {
@@ -484,14 +511,12 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 - (void) menuWillOpen:(NSMenu *)_menu
 {
 	// assert _menu == menu
-	menuOpened = YES;
 	
-	if ([menu respondsToSelector:@selector(removeAllItems)])
-		[(id)menu removeAllItems];
-	else {
-		while ([menu itemAtIndex:0] != nil)
-			[menu removeItemAtIndex:0];
-	}
+	menuOpened = YES;
+
+	// [menu removeAllItems] is not supported on older platforms.
+	while ([menu numberOfItems])
+		[menu removeItemAtIndex:0];
 	
 	if (!menuOpts) return;
 
@@ -502,7 +527,7 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	// Check if the option key is pressed. This will reveal some additional features. >= 10.6 only.
 	bool optionKey = [NSEvent respondsToSelector:@selector(modifierFlags)] && ((int)[NSEvent modifierFlags] & NSAlternateKeyMask);
 
-	int status = [[menuOpts objectForKey: @"status"] intValue];
+	int status = [[menuOpts objectAtIndex: 0] intValue];
 	
 	NSMenuItem *item = 0;
 	if (status == s_enabled)
@@ -514,7 +539,7 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	
 	if (item) [menu addItem:[NSMenuItem separatorItem]];
 	
-	NSArray *tooltip = [menuOpts objectForKey: @"tooltip"];
+	NSArray *tooltip = [menuOpts objectAtIndex: 2];
 	
 	if (tooltip && [tooltip count] > 0) {
 		for (int i = 0; i < [tooltip count]; i++) {
@@ -530,7 +555,7 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	else if (status == s_enabled) {
 		[menu addItemWithTitle: @"Uitloggen" action: @selector(menuLogoutHandler:) keyEquivalent: @""];
 		item = [menu addItemWithTitle: @"Popups" action: @selector(menuPopupsHandler:) keyEquivalent: @""];
-		if ([[menuOpts objectForKey: @"popups"] boolValue]) [item setState: NSOnState];
+		if ([[menuOpts objectAtIndex: 1] boolValue]) [item setState: NSOnState];
 	}
 
 	if (optionKey)
@@ -547,7 +572,7 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 }
 // }}}
 
-- (void) setMenu:(NSDictionary *)opts
+- (void) setMenu:(NSArray *)opts
 {
 	[menuOpts release];
 	menuOpts = [opts retain];
@@ -596,9 +621,9 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	                                                         object: nil];
 
 	NSLog(@"Adding StatusBar item");
-	statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
+	statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength] retain];
 	[statusItem setHighlightMode:YES];
-	[self setIcon:ICON_GRAY];
+	[self setIcon:[NSArray arrayWithObjects: ICON_GRAY, @"", nil]];
 	
 	NSImage *i = [NSImage imageNamed:ICON_ALT];
 	[i setSize:NSMakeSize(20, 20)];
@@ -609,6 +634,9 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	[menu addItem:[NSMenuItem separatorItem]];
 	
 	[statusItem setMenu:menu];
+	
+	NSLog(@"Initializing notifier");
+	notiRunloop.post(boost::bind(&Notifier::initialize, &notifier));
 }
 
 - (void) dealloc

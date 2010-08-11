@@ -132,8 +132,8 @@ build/darwin-%/WebNoti.app: res/darwin-info.plist
 		($(call echo,Copying $(DARWIN_GRAWL) framework) && \
 		(cp -R ext/$(DARWIN_GRAWL).framework build/darwin-$*/WebNoti.app/Contents/Frameworks/))
 
-# Copy resources annotated in our source file to Contents/Resources/
 build/darwin-%/WebNoti.app/Contents/Resources: src/MacNotifier.mm
+	# Copy resources annotated in our source file to Contents/Resources/
 	@mkdir -p build/darwin-$*/WebNoti.app/Contents/Resources
 	$(shell perl -nle 'print "cp $$2 build/darwin-$*/WebNoti.app/Contents/Resources/$$1;" \
 		if /"(.*)"\s*\/\/\s*\$$RESOURCE\$$\s*\"(.*)\"\s*$$/' < $< | sed 's/$$SITE/$(call getSite,$*)/g')
@@ -146,7 +146,7 @@ build/darwin-%/MacNotifier.o: src/MacNotifier.mm src/Notifier.h ext/ilmpclient/*
 
 build/darwin-%/WebNoti.app/Contents/MacOS/Notifier: build/darwin-%/MacNotifier.o $(DSA_VERIFY_SRCS) build/darwin-%/WebNoti.app 
 	@mkdir -p build/darwin-$*/WebNoti.app/Contents/MacOS
-	$(call var,GPP,darwin,$*) $< $(DSA_VERIFY_SRCS) $(call var,LFLAGS,darwin,$*) -o $@
+	$(call var,GPP,darwin,$*) $(call var,LFLAGS,darwin,$*) $< $(DSA_VERIFY_SRCS) -o $@
 
 ### linux builds ConsoleNotifier ###
 

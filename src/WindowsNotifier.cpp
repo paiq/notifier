@@ -18,7 +18,7 @@
 
 #define _WIN32_IE 0x0500
 
-#define USERAGENT SITENAME " Notifier 0.9.9.5 (Windows)"
+#define USERAGENT SITENAME " Notifier 0.9.9.6 (Windows)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -84,25 +84,22 @@ class WindowsNotifier : public Notifier // {{{
 		setMenu(status, popups); // uiRunloop.post(...)
 	}
 	
-	int blinkIcon;
-	bool blinking;
 	std::auto_ptr<boost::asio::deadline_timer> blinkTimer;
-	void onBlinkTimer(const boost::system::error_code& err) {
+	void onBlink(const boost::system::error_code& err, int nextIcon, int curIcon) {
 		if (err == boost::asio::error::operation_aborted)
 			return;
 
-		setIcon(blinking ? blinkIcon : ICON_NORMAL);
-		
-		blinking = !blinking;
+		setIcon(nextIcon);
 		
 		blinkTimer.reset(new boost::asio::deadline_timer(ioService));
 		blinkTimer->expires_from_now(boost::posix_time::seconds(1));
-		blinkTimer->async_wait(boost::bind(&WindowsNotifier::onBlinkTimer, this, boost::asio::placeholders::error));		
+		blinkTimer->async_wait(boost::bind(&WindowsNotifier::onBlink, this,
+				boost::asio::placeholders::error, curIcon, nextIcon));
 	}
-	
+		
 public:
 	WindowsNotifier(boost::asio::io_service& ioService_) :
-			Notifier(ioService_), popups(true), blinkIcon(0), blinking(false), blinkTimer() {
+			Notifier(ioService_), popups(true), blinkTimer() {
 	}
 
 	void togglePopups()
@@ -116,6 +113,11 @@ public:
 		if (status!=s_enabled) setEnabled(true, true);
 		else open();
 	}
+	
+	virtual void openUrl(const std::string& url)
+	{
+		ShellExecute(0, "open", url.c_str(), 0, 0, SW_MAXIMIZE);
+	}
 
 	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio)
 	{
@@ -127,27 +129,24 @@ public:
 	
 	virtual void statusChanged()
 	{
-		int newBlinkIcon = 0;
-
-		if (unreadMsgs) newBlinkIcon = ICON_MSG;
-		else if (users.size()) newBlinkIcon = ICON_USERS; // uiRunloop.post(...)
-		else if (status == s_enabled) setIcon(ICON_NORMAL); // uiRunloop.post(...)
-		else setIcon(ICON_GRAY); // uiRunloop.post(...)
-
-		if (newBlinkIcon && blinkIcon != newBlinkIcon) {
-			blinkIcon = newBlinkIcon;
-			blinking = false;
-			onBlinkTimer(boost::system::error_code());
-		}
-		else if (!newBlinkIcon)
-			blinkTimer.reset();
-		
+		Notifier::statusChanged();
 		updateMenu();
 	}
 	
-	virtual void openUrl(const std::string& url)
+	virtual void icon(Icon i)
 	{
-		ShellExecute(0, "open", url.c_str(), 0, 0, SW_MAXIMIZE);
+#ifdef DEBUG
+		std::cout << "icon: " << i << std::endl;
+#endif
+		blinkTimer.reset();
+		
+		if (i == i_disabled) setIcon(ICON_GRAY);
+		else if (i == i_users) setIcon(ICON_USERS);
+		else if (i == i_normal) setIcon(ICON_NORMAL);
+		else {
+			setIcon(ICON_MSG);
+			onBlink(boost::system::error_code(), ICON_NORMAL, ICON_MSG);
+		}
 	}
 	
 	virtual void tooltip(const std::list<std::string>& items)
@@ -349,12 +348,10 @@ NOTIFYICONDATA niData;
 HICON iconNormal, iconGray, iconUsers, iconMsg;
 
 std::string balloonUrl;
-bool balloonSticky;
 
-void showBalloon(const std::string& title, const std::string& msg, const std::string& url, bool sticky)
+void showBalloon(const std::string& title, const std::string& msg, const std::string& url)
 {
 	balloonUrl = url;
-	balloonSticky = sticky;
 	
 	strCopy(title, niData.szInfoTitle);
 	strCopy(msg, niData.szInfo);
@@ -367,7 +364,6 @@ void showBalloon(const std::string& title, const std::string& msg, const std::st
 
 void clearBalloon()
 {
-	balloonSticky = false;
 	strCopy(std::string(""), niData.szInfoTitle);
 	strCopy(std::string(""), niData.szInfo);
 	niData.uFlags = NIF_INFO;
@@ -450,11 +446,7 @@ void cbTrayNotify(HWND hwnd, WPARAM w, LPARAM l)
 		clearBalloon();
 	}
 	else if (l == NIN_BALLOONTIMEOUT) {
-		if (balloonSticky) {
-			niData.uFlags = NIF_INFO;
-			Shell_NotifyIcon(NIM_MODIFY, &niData);
-		}
-		else clearBalloon();
+		clearBalloon();
 	}
 }
 
@@ -550,8 +542,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	winClass.lpszClassName	= gszClassName;
 	winClass.hIconSm		= LoadIcon(NULL, IDI_APPLICATION);
 
-	if (!RegisterClassEx(&winClass))
-		throw "Window Registration Failed!";
+	if (!RegisterClassEx(&winClass)) {
+		std::cerr << "Window Registration Failed" << std::endl;
+		return -1;
+	}
 
 	hwnd = CreateWindowEx(WS_EX_STATICEDGE, gszClassName, "", WS_OVERLAPPEDWINDOW,
 			CW_USEDEFAULT, CW_USEDEFAULT, 320, 240, NULL, NULL, ghInstance, NULL);

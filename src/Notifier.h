@@ -44,6 +44,13 @@ typedef enum {
 	s_enabled		// ILMP stream connected, got auth w/userId
 } Status;
 
+typedef enum {
+	i_msgs, 
+	i_users,
+	i_normal,
+	i_disabled
+} Icon;
+
 class Notifier : boost::noncopyable {
 protected:
 	boost::shared_ptr<IlmpStream> ilmp;
@@ -131,7 +138,6 @@ private:
 
 		(IlmpCommand(ilmp.get(), "User.client") << cookie << userAgent << boost::bind(&Notifier::cbClient, this, _1) << 8).send();
 		(IlmpCommand(ilmp.get(), "Notifier.streamStats") << boost::bind(&Notifier::cbStats, this, _1)).send();
-
 	}
 
 	void connect()
@@ -300,10 +306,7 @@ public:
 			userAgent(USERAGENT), cookie(""), userId(0),
 			userName(""), unreadMsgs(0), maleUsers(0), femaleUsers(0), onlineUsers(0),
 			status(s_disconnected), retryTime(5), retries(3), userCb(0), reconnectTimer(),
-			isUpdating(false) {
-		
-		ioService.post(boost::bind(&Notifier::connect, this));
-	}
+			isUpdating(false) {}
 
 	void setEnabled(bool enabled, bool userAction)
 	{
@@ -365,8 +368,23 @@ public:
 			<< "Copyright 2005-2010 Implicit-Link";
 		notify(SITEEXTNAME, msg.str(), "http://opensource.implicit-link.com/", false, true);
 	}
-	
-	virtual void dataChanged() {
+
+	virtual void initialize() {
+		connect();
+	}
+
+	// Invoked when any of status, !!users.size(), !!unreadMsgs changes.
+	virtual void statusChanged()
+	{
+		if (unreadMsgs) icon(i_msgs);
+		else if (users.size()) icon(i_users);
+		else if (status == s_enabled) icon(i_normal);
+		else icon(i_disabled);
+	}
+
+	// Invoked when any of status, maleUsers, femaleUsers, onlineUsers, isUpdating, users, unreadMsgs changes
+	virtual void dataChanged()
+	{
 		std::list<std::string> ttItems;
 		
 		if (isUpdating)
@@ -412,14 +430,12 @@ public:
 		tooltip(ttItems);
 	}
 
-	virtual void needUpdate(const std::string& url) {}
-	
-	// Invoked when either status, !!users.size(), !!unreadMsgs changes.
-	virtual void statusChanged() {}
-
 	virtual void openUrl(const std::string&) { }
 	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio) { }
+	virtual void icon(Icon i) { }
 	virtual void tooltip(const std::list<std::string>& items) { }
+
+	virtual void needUpdate(const std::string& url) {}
 	
 	virtual std::string getConfigValue(const std::string& name) { return ""; }
 	virtual bool setConfigValue(const std::string& name, const std::string& value) { return false; }
