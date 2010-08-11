@@ -19,7 +19,7 @@
 #import <Cocoa/Cocoa.h>
 #import <GrowlApplicationBridge.h>
 
-#define USERAGENT SITENAME " Notifier 0.9.9.6 (Mac)"
+#define USERAGENT SITENAME " Notifier 1.0 (Mac)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 

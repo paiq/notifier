@@ -18,7 +18,7 @@
 
 #define _WIN32_IE 0x0500
 
-#define USERAGENT SITENAME " Notifier 0.9.9.6 (Windows)"
+#define USERAGENT SITENAME " Notifier 1.0 (Windows)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
