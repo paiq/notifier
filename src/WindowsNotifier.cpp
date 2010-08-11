@@ -18,7 +18,7 @@
 
 #define _WIN32_IE 0x0500
 
-#define USERAGENT SITENAME " Notifier 0.9.9 (Windows)"
+#define USERAGENT SITENAME " Notifier 0.9.9.5 (Windows)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -117,8 +117,10 @@ public:
 		else open();
 	}
 
-	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky)
+	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio)
 	{
+		if (!prio && !popups) return;
+
 		if (title.size()) showBalloon(title, text, url, sticky); // uiRunloop.post(...)
 		else clearBalloon(); // uiRunloop.post(...)
 	}
@@ -128,11 +130,12 @@ public:
 		int newBlinkIcon = 0;
 
 		if (unreadMsgs) newBlinkIcon = ICON_MSG;
-		else if (users.size()) setIcon(ICON_USERS); // uiRunloop.post(...)
+		else if (users.size()) newBlinkIcon = ICON_USERS; // uiRunloop.post(...)
 		else if (status == s_enabled) setIcon(ICON_NORMAL); // uiRunloop.post(...)
 		else setIcon(ICON_GRAY); // uiRunloop.post(...)
 
 		if (newBlinkIcon && blinkIcon != newBlinkIcon) {
+			blinkIcon = newBlinkIcon;
 			blinking = false;
 			onBlinkTimer(boost::system::error_code());
 		}
@@ -164,7 +167,6 @@ public:
 
 		HKEY hkey;
 		if (RegOpenKeyEx(HKEY_CURRENT_USER, "Software\\Implicit-Link\\WebNoti", 0, KEY_ALL_ACCESS, &hkey) == ERROR_SUCCESS) {
-
 			unsigned long type = REG_SZ;
 			unsigned char buf[4096];
 			unsigned long bufSize = sizeof(buf);
@@ -197,30 +199,24 @@ public:
 	
 	virtual void needUpdate(const std::string& url)
 	{
-		updaterRun(url, boost::bind(&WindowsNotifier::installUpdate, this, _1));
-	}
-	
-	void installUpdate(boost::asio::streambuf* binary)
-	{
-		if (!binary) return;
-
-		// Install new binary by writing to file and swapping name with our running
-		// binary. Then relaunch.
-		
-		TCHAR appFile[MAX_PATH]; // Name of running binary
+		// Try to create a _autoupdate dir in our binary's path. If this is not
+		// allowed we probably have no (UAC) permissions here, and we will skip the
+		// update.
+		TCHAR appFile[MAX_PATH];
 		if (!GetModuleFileName(0, (LPTSTR)appFile, sizeof(appFile))) {
-			std::cerr << "Updater: unable to determine our application binary" << std::endl;
-			delete binary;
+			serr("WinUpdater: unable to determine our application binary");
 			return;
 		}
+
+		std::string appFileStr(appFile);
 		
-		std::cout << "Updater: our binary is " << appFile << std::endl;
+		std::cout << "WinUpdater: our binary is " << appFileStr << std::endl;
 		
-		std::string updateDirStr(appFile);
+		std::string updateDirStr(appFileStr);
 		size_t lastSlash = updateDirStr.find_last_of('\\');
 		if (lastSlash == std::string::npos || lastSlash == 0) {
-			std::cerr << "Updater: application binary has no directory: " << appFile << std::endl;
-			delete binary;
+			std::stringstream msg; msg << "WinUpdater: application binary has no directory: " << appFileStr;
+			serr(msg.str());
 			return;
 		}
 		updateDirStr = updateDirStr.substr(0, lastSlash);
@@ -228,22 +224,38 @@ public:
 		
 		TCHAR updateDir[MAX_PATH];
 		strCopy(updateDirStr, updateDir);
+
+		if (CreateDirectory(updateDir, 0) || GetLastError() == ERROR_ALREADY_EXISTS)
+			updaterRun(url, boost::bind(&WindowsNotifier::installUpdate, this, _1, appFileStr, updateDirStr));
+		else {
+			std::stringstream msg; msg << "WinUpdater: unable to create " << updateDir << ", skipping update. GetLastError()=" << GetLastError();
+			serr(msg.str());
+		}
+	}
+	
+	void installUpdate(boost::asio::streambuf* binary, const std::string& appFileStr, const std::string& updateDirStr)
+	{
+		if (!binary) return;
+
+		// Install new binary by writing to file and swapping name with our running
+		// binary. Then relaunch.
 		
-		CreateDirectory(updateDir, 0);
-		
+		TCHAR updateDir[MAX_PATH]; strCopy(updateDirStr, updateDir);
+		TCHAR appFile[MAX_PATH]; strCopy(appFileStr, appFile);
 		TCHAR tempFileNew[MAX_PATH]; // New binary
 		TCHAR tempFileOld[MAX_PATH]; // Old binary
 		
 		if (!GetTempFileName(updateDir, "UD_", 0, tempFileOld) ||
 				!GetTempFileName(updateDir, "UD_", 0, tempFileNew)) {
-			std::cerr << "Updater: unable to create temporary file" << std::endl;
+			serr("WinUpdater: unable to create temporary file");
 			delete binary;
 			return;
 		} 
 		
 	    HANDLE fh = CreateFile((LPTSTR) tempFileNew, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	    if (fh == INVALID_HANDLE_VALUE) {
-			std::cerr << "Updater: unable to open temporary file for writing: " << tempFileNew << std::endl;
+			std::stringstream msg; msg << "WinUpdater: unable to open temporary file for writing: " << tempFileNew; 
+			serr(msg.str());
 			delete binary;
 			return;
 	    } 
@@ -261,22 +273,25 @@ public:
 		delete binary;
 
 		if (!ok) {
-			std::cerr << "Updater: unable to write to temporary file: " << tempFileNew << std::endl;
+			std::stringstream msg; msg << "WinUpdater: unable to write to temporary file: " << tempFileNew; 
+			serr(msg.str());
 			return;
 		}
 		
 		if (!MoveFileEx(appFile, tempFileOld, MOVEFILE_REPLACE_EXISTING)) {
-			std::cerr << "Updater: unable to move " << appFile << " to " << tempFileOld << std::endl;
+			std::stringstream msg; msg << "WinUpdater: unable to move " << appFile << " to " << tempFileOld << std::endl;
+			serr(msg.str());
 			return;
 		}
 
 		if (!MoveFileEx(tempFileNew, appFile, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
 			MoveFileEx(tempFileOld, appFile, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED); // Move back old one
-			std::cerr << "Updater: unable to move " << tempFileNew << " to " << appFile << std::endl;
+			std::stringstream msg; msg << "WinUpdater: unable to move " << tempFileNew << " to " << appFile;
+			serr(msg.str());
 			return;
 		}
 		
-		std::cerr << "Updater: done; relaunching" << std::endl;
+		sout("WinUpdater: success; relaunching");
 		
 		ShellExecute(0, "open", appFile, "", 0, SW_SHOW);
 		

@@ -66,6 +66,17 @@ protected:
 	
 	bool isUpdating;
 
+	void sout(const std::string& msg)
+	{
+		if (ilmp) (IlmpCommand(ilmp.get(), "Notifier.log") << msg << 0).send();
+		std::cout << msg << std::endl;
+	}
+
+	void serr(const std::string& msg)
+	{
+		if (ilmp) (IlmpCommand(ilmp.get(), "Notifier.log") << msg << 1).send();
+		std::cerr << msg << std::endl;
+	}
 
 private:
 	bool isEnabled;
@@ -163,13 +174,14 @@ private:
 			std::string url; params.tryNext(url);
 			std::string title; params.tryNext(title, SITENAME);
 			int sticky; params.tryNext(sticky);
+			int prio; params.tryNext(prio);
 			
-			notify(msg.length() ? title : "", msg, url, !!sticky);
+			notify(msg.length() ? title : "", msg, url, !!sticky, !!prio);
 		}
 		else if (cmd == "reload") {
 			std::cout << "Got 'reload' command; scheduling reconnect" << std::endl;
 			
-			notify(SITENAME, "Sessie afgesloten door de server", "", false);
+			notify(SITENAME, "Sessie afgesloten door de server", "", false, true);
 			setConfigValue("enabled", "false");
 			userCb = 0;
 			ioService.post(boost::bind(&Notifier::reconnect, this));
@@ -198,14 +210,19 @@ private:
 			params.skip(); // unused, used to be sd state.
 			params.next(userName);
 			
-			notify(SITENAME, "De notifier is nu online", openUrl, false);
+			notify(SITENAME, "De notifier is nu online", openUrl, false, true);
 			toStatus(s_enabled);
 			return;
 		}
 		else if (cmd == "online") {
 			std::string name; params.next(name);
 			int id; params.next(id);
+			bool wasOnline = (users.find(id) != users.end());
 			users[id] = User(id, name);
+			if (!wasOnline) {
+				std::stringstream msg; msg << name << " is nu online";
+				notify(SITENAME, msg.str(), openUrl, false, false);
+			}
 		}
 		else if (cmd == "offline") {
 			std::string name; params.next(name);
@@ -216,7 +233,7 @@ private:
 			std::string name; params.next(name);
 			unreadMsgs++;
 			std::stringstream msg; msg << "Nieuw bericht van " << name;
-			notify(SITENAME, msg.str(), openUrl, false);
+			notify(SITENAME, msg.str(), openUrl, false, false);
 		}
 		else if (cmd == "smsg") {
 			unreadMsgs++;
@@ -230,8 +247,9 @@ private:
 			std::string url; params.tryNext(url);
 			std::string title; params.tryNext(title, SITENAME);
 			int sticky; params.tryNext(sticky);
+			int prio; params.tryNext(prio);
 			
-			notify(msg.length() ? title : "", msg, url, !!sticky);
+			notify(msg.length() ? title : "", msg, url, !!sticky, !!prio);
 		}
 		else {
 			std::cerr << "Unknown command from ILCS on streamUser callback: " << cmd << std::endl;
@@ -276,7 +294,7 @@ private:
 
 public:
 #ifndef USERAGENT
-#define USERAGENT "Notifier [unknown; " __DATE__ ", " __TIME__ "]"
+	#define USERAGENT "Notifier [unknown; " __DATE__ ", " __TIME__ "]"
 #endif
 	Notifier(boost::asio::io_service& ioService_) : ioService(ioService_), isEnabled(true),
 			userAgent(USERAGENT), cookie(""), userId(0),
@@ -302,13 +320,13 @@ public:
 			// associated with a user.
 			if (!(isEnabled && userId) && userCb) {
 				userCb->cancel();
-				notify(SITENAME, "De notifier is nu uitgelogd", "", false);
+				notify(SITENAME, "De notifier is nu uitgelogd", "", false, true);
 			}
 
 			if (isEnabled && !userId) {
 				std::stringstream loginUrl; loginUrl << "http://" SITEHOST "/authorize?c=" << cookie;
 				if (userAction) openUrl(loginUrl.str());
-				else notify(SITENAME, "De notifier is uitgelogd, klik hier om in te loggen", loginUrl.str(), true);
+				else notify(SITENAME, "De notifier is uitgelogd, klik hier om in te loggen", loginUrl.str(), true, true);
 			}
 			else if (isEnabled && !userCb)
 				(IlmpCommand(ilmp.get(), "Notifier.streamUser") << boost::bind(&Notifier::cbUser, this, _1) >> &userCb).send();
@@ -318,7 +336,7 @@ public:
 				// done through the server's welcome msg.
 		}
 	}
-	
+
 	void reconnect()
 	{
 		retryTime = 5;
@@ -345,7 +363,7 @@ public:
 			<< "Compiled at " << __DATE__ << ", " << __TIME__ << "\n"
 			<< "\n"
 			<< "Copyright 2005-2010 Implicit-Link";
-		notify(SITEEXTNAME, msg.str(), "http://opensource.implicit-link.com/", false);
+		notify(SITEEXTNAME, msg.str(), "http://opensource.implicit-link.com/", false, true);
 	}
 	
 	virtual void dataChanged() {
@@ -400,7 +418,7 @@ public:
 	virtual void statusChanged() {}
 
 	virtual void openUrl(const std::string&) { }
-	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky) { }
+	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio) { }
 	virtual void tooltip(const std::list<std::string>& items) { }
 	
 	virtual std::string getConfigValue(const std::string& name) { return ""; }

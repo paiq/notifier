@@ -19,7 +19,7 @@
 #import <Cocoa/Cocoa.h>
 #import <GrowlApplicationBridge.h>
 
-#define USERAGENT SITENAME " Notifier 0.9.9 (Mac)"
+#define USERAGENT SITENAME " Notifier 0.9.9.4 (Mac)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -153,10 +153,11 @@ public:
 		(IlmpCommand(ilmp.get(), "User.setMotdSong") << motd).send();
 	}
 	
-	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky)
+	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool force)
 	{
-		if (!sticky && (!popups || (initTime && [initTime timeIntervalSinceNow] > -5))) return;
-			// Do not popup non-sticky messages if popups are disabled or the first seconds after launch.
+		if (!force && !popups) return;
+		if (!sticky && (initTime && [initTime timeIntervalSinceNow] > -5)) return;
+			// Do not popup non-sticky messages the first seconds after launch.
 		
 		NSString *nsTitle = [[NSString alloc] initWithStdString: title];
 		NSString *nsText = [[NSString alloc] initWithStdString: text];
@@ -292,26 +293,26 @@ public:
 		if (!binary) return;
 		
 		if (mkdir("/tmp/WebNotiUpdate", 0700) < 0) {
-			std::cerr << "Updater: unable to create temporary directory" << std::endl;
+			serr("MacUpdater: unable to create temporary directory");
 			delete binary;
 			return;
 		}
 		
 		char tempDir[] = "/tmp/WebNotiUpdate/new-XXXXXX";
 		if (!mkdtemp(tempDir)) {
-			std::cerr << "Updater: unable to create temporary directory" << std::endl;
+			serr("MacUpdater: unable to create temporary directory");
 			delete binary;
 			return;
 		}
 		
-		std::cout << "Updater: extracting update in " << tempDir << std::endl;
+		std::cout << "MacUpdater: extracting update in " << tempDir << std::endl;
 		
 		std::stringstream cmd;
 		cmd << "tar -xj -C'" << tempDir << "'";
 		FILE* tar = popen(cmd.str().c_str(), "w");
 		
 		if (!tar) {
-			std::cerr << "Updater: unable to launch `tar`" << std::endl;
+			serr("MacUpdater: unable to launch `tar`");
 			delete binary;
 			return;
 		}
@@ -328,12 +329,13 @@ public:
 		delete binary;
 
 		if (!ok) {
-			std::cerr << "Updater: unable to write to `tar` pipe" << std::endl;
+			serr("MacUpdater: unable to write to `tar` pipe");
 			return;
 		}
 
 		if (tarRet != 0) {
-			std::cerr << "Updater: `tar` returned error code " << tarRet << std::endl;
+			std::stringstream msg; msg << "MacUpdater: `tar` returned error code " << tarRet;
+			serr(msg.str());
 			return;
 		}
 
@@ -347,27 +349,29 @@ public:
 		memcpy(tempDir, "/tmp/WebNotiUpdate/old-XXXXXX", sizeof(tempDir));
 		
 		if (!mkdtemp(tempDir)) {
-			std::cerr << "Updater: unable to create temporary directory" << std::endl;
+			serr("MacUpdater: unable to create temporary directory");
 			return;
 		}
 		
 		std::string oldAppPath(tempDir); // Target of old app
 		oldAppPath.append("/WebNoti.app");
 
-		std::cout << "Updater: moving " << appPath << " to " << oldAppPath << std::endl;
+		std::cout << "MacUpdater: moving " << appPath << " to " << oldAppPath << std::endl;
 		if (rename(appPath.c_str(), oldAppPath.c_str()) < 0) {
-			std::cerr << "Updater: unable to move old AppBundle from " << appPath << " to " << oldAppPath << std::endl;
+			std::stringstream msg; msg << "MacUpdater: unable to move old AppBundle from " << appPath << " to " << oldAppPath;
+			serr(msg.str());
 			return;
 		}
 
-		std::cout << "Updater: moving " << newAppPath << " to " << appPath << std::endl;
+		std::cout << "MacUpdater: moving " << newAppPath << " to " << appPath << std::endl;
 		if (rename(newAppPath.c_str(), appPath.c_str()) < 0) {
 			rename(oldAppPath.c_str(), appPath.c_str()); // Move back old one.
-			std::cerr << "Updater: unable to move new AppBundle from " << newAppPath << " to " << appPath << std::endl;
+			std::stringstream msg; msg << "MacUpdater: unable to move new AppBundle from " << newAppPath << " to " << appPath;
+			serr(msg.str());
 			return;
 		}
 		
-		std::cerr << "Updater: done; relaunching" << std::endl;
+		sout("MacUpdater: success; relaunching");
 		
 		// Relaunch notifier through `open` wrapper.
 		pool = [[NSAutoreleasePool alloc] init];
