@@ -298,6 +298,7 @@ private:
 		}
 	}
 
+	boost::asio::io_service::work *waitForInit;
 public:
 #ifndef USERAGENT
 	#define USERAGENT "Notifier [unknown; " __DATE__ ", " __TIME__ "]"
@@ -306,7 +307,18 @@ public:
 			userAgent(USERAGENT), cookie(""), userId(0),
 			userName(""), unreadMsgs(0), maleUsers(0), femaleUsers(0), onlineUsers(0),
 			status(s_disconnected), retryTime(5), retries(3), userCb(0), reconnectTimer(),
-			isUpdating(false) {}
+			isUpdating(false) {
+
+		waitForInit = new boost::asio::io_service::work(ioService);
+	}
+
+	virtual void initialize() {
+#ifdef DEBUG
+		std::cout << "initialize" << std::endl;
+#endif
+		delete waitForInit;
+		connect();
+	}
 
 	void setEnabled(bool enabled, bool userAction)
 	{
@@ -367,10 +379,6 @@ public:
 			<< "\n"
 			<< "Copyright 2005-2010 Implicit-Link";
 		notify(SITEEXTNAME, msg.str(), "http://opensource.implicit-link.com/", false, true);
-	}
-
-	virtual void initialize() {
-		connect();
 	}
 
 	// Invoked when any of status, !!users.size(), !!unreadMsgs changes.

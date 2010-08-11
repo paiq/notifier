@@ -63,7 +63,7 @@ extern "C" void tss_cleanup_implemented() { }
 #define DO_VISIT		1008
 // }}}
 
-void showBalloon(const std::string&, const std::string&, const std::string&, bool);
+void showBalloon(const std::string&, const std::string&, const std::string&);
 void clearBalloon();
 void setMenu(int,bool);
 void setTooltip(const std::string&);
@@ -123,7 +123,7 @@ public:
 	{
 		if (!prio && !popups) return;
 
-		if (title.size()) showBalloon(title, text, url, sticky); // uiRunloop.post(...)
+		if (title.size()) showBalloon(title, text, url); // uiRunloop.post(...)
 		else clearBalloon(); // uiRunloop.post(...)
 	}
 	
@@ -558,6 +558,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	SetConsoleCtrlHandler((PHANDLER_ROUTINE) ctrlHandler, TRUE);
 
 	_beginthread(notiThreadFunc, 0, 0);
+
+	std::cout << "Initializing notifier" << std::endl;
+	notiRunloop.post(boost::bind(&Notifier::initialize, &notifier));
 	
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0) > 0) {

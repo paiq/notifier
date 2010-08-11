@@ -168,9 +168,9 @@ public:
 	}
 	
 	virtual void initialize() {
+		Notifier::initialize();
 		initTime = [[NSDate alloc] init];
 		popups = (getConfigValue("popups") == "true");
-		Notifier::initialize();
 		updateMenu();
 	}
 	
@@ -304,14 +304,14 @@ public:
 	
 	virtual void needUpdate(const std::string& url)
 	{
-		//updaterRun(url, boost::bind(&MacNotifier::installUpdate, this, _1));
+		updaterRun(url, boost::bind(&MacNotifier::installUpdate, this, _1));
 	}
 	
 	void installUpdate(boost::asio::streambuf* binary)
 	{
 		if (!binary) return;
 		
-		if (mkdir("/tmp/WebNotiUpdate", 0700) < 0) {
+		if (mkdir("/tmp/WebNotiUpdate", 0700) < 0 && errno != EEXIST) {
 			serr("MacUpdater: unable to create temporary directory");
 			delete binary;
 			return;

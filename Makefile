@@ -146,7 +146,7 @@ build/darwin-%/MacNotifier.o: src/MacNotifier.mm src/Notifier.h ext/ilmpclient/*
 
 build/darwin-%/WebNoti.app/Contents/MacOS/Notifier: build/darwin-%/MacNotifier.o $(DSA_VERIFY_SRCS) build/darwin-%/WebNoti.app 
 	@mkdir -p build/darwin-$*/WebNoti.app/Contents/MacOS
-	$(call var,GPP,darwin,$*) $(call var,LFLAGS,darwin,$*) $< $(DSA_VERIFY_SRCS) -o $@
+	$(call var,GPP,darwin,$*) $< $(DSA_VERIFY_SRCS) $(call var,LFLAGS,darwin,$*) -o $@
 
 ### linux builds ConsoleNotifier ###
 
