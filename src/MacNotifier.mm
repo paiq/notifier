@@ -137,18 +137,15 @@ class MacNotifier : public Notifier
 	}
 	// }}}
 	
-	NSDate *initTime;
-
 public:
 	MacNotifier(boost::asio::io_service& ioService_) :
 			Notifier(ioService_), popups(false), tooltipArray(0), iconIcon(ICON_GRAY), iconTitle(@""),
-			blinkTimer(), initTime(0) {
+			blinkTimer() {
 	}
 
 	~MacNotifier()
 	{
 		// Can't cleanup blinkTimer here, but instances are not destroyed anyway.
-		[initTime release];
 		[tooltipArray release];
 		[iconIcon release];
 		[iconTitle release];
@@ -169,7 +166,6 @@ public:
 	
 	virtual void initialize() {
 		Notifier::initialize();
-		initTime = [[NSDate alloc] init];
 		popups = (getConfigValue("popups") == "true");
 		updateMenu();
 	}
@@ -201,11 +197,9 @@ public:
 		[url1 release];
 	}
 	
-	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool force)
+	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio)
 	{
-		if (!force && !popups) return;
-		if (!sticky && (initTime && [initTime timeIntervalSinceNow] > -5)) return;
-			// Do not popup non-sticky messages the first seconds after launch.
+		if (!prio && !popups) return;
 		
 		NSString *nsTitle = [[NSString alloc] initWithStdString: title];
 		NSString *nsText = [[NSString alloc] initWithStdString: text];

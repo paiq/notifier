@@ -73,6 +73,10 @@ protected:
 	
 	bool isUpdating;
 
+	bool neededAuthorization;
+		// Whether we needed authorization to get logged in. Used to control whether to
+		// show the '... is nu online' notification.
+
 	void sout(const std::string& msg)
 	{
 		if (ilmp) (IlmpCommand(ilmp.get(), "Notifier.log") << msg << 0).send();
@@ -165,11 +169,13 @@ private:
 		if (cmd == "auth") {
 			params.next(cookie);
 			params.next(userId);
-			std::string challenge; params.next(challenge);
+			//std::string challenge; params.next(challenge);
 			
 			setConfigValue("cookie", cookie);
 			connectError = "";
 			toStatus(s_connected);
+
+			if (!userId) neededAuthorization = true;
 
 			// Depending on whether we have a userId now and we want to be enabled (isEnabled),
 			// we might want to open our authorization page or subscribe to Notifier.streamUser.
@@ -216,8 +222,11 @@ private:
 			params.skip(); // unused, used to be sd state.
 			params.next(userName);
 			
-			notify(SITENAME, "De notifier is nu online", openUrl, false, true);
 			toStatus(s_enabled);
+			if (neededAuthorization) {
+				notify(SITENAME, "De notifier is nu online", openUrl, false, true);
+				neededAuthorization = false;
+			}
 			return;
 		}
 		else if (cmd == "online") {
@@ -307,7 +316,7 @@ public:
 			userAgent(USERAGENT), cookie(""), userId(0),
 			userName(""), unreadMsgs(0), maleUsers(0), femaleUsers(0), onlineUsers(0),
 			status(s_disconnected), retryTime(5), retries(3), userCb(0), reconnectTimer(),
-			isUpdating(false) {
+			isUpdating(false), neededAuthorization(false) {
 
 		waitForInit = new boost::asio::io_service::work(ioService);
 	}
@@ -580,7 +589,7 @@ public:
 
 			std::string proto; tokens.next(proto);
 			if (proto != "http:") {
-				std::cerr << "Updater error: protocol should be 'http'";
+				std::cerr << "Updater error: protocol should be 'http'" << std::endl;
 				return;
 			}
 	
@@ -591,7 +600,7 @@ public:
 				path.append(pathPart);
 			}
 			if (!path.size()) {
-				std::cerr << "Updater error: path seems empty";
+				std::cerr << "Updater error: path seems empty" << std::endl;
 				return;
 			}
 		}

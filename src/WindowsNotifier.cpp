@@ -18,7 +18,7 @@
 
 #define _WIN32_IE 0x0500
 
-#define USERAGENT SITENAME " Notifier 1.0 (Windows)"
+#define USERAGENT SITENAME " Notifier 1.0.1 (Windows)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -105,6 +105,7 @@ public:
 	void togglePopups()
 	{
 		popups = !popups;
+		setConfigValue("popups", popups ? "true" : "false");
 		updateMenu();
 	}
 	
@@ -114,6 +115,12 @@ public:
 		else open();
 	}
 	
+	virtual void initialize() {
+		Notifier::initialize();
+		popups = (getConfigValue("popups") == "true");
+		updateMenu();
+	}
+
 	virtual void openUrl(const std::string& url)
 	{
 		ShellExecute(0, "open", url.c_str(), 0, 0, SW_MAXIMIZE);
@@ -141,8 +148,11 @@ public:
 		blinkTimer.reset();
 		
 		if (i == i_disabled) setIcon(ICON_GRAY);
-		else if (i == i_users) setIcon(ICON_USERS);
 		else if (i == i_normal) setIcon(ICON_NORMAL);
+		else if (i == i_users) {
+			setIcon(ICON_USERS);
+			onBlink(boost::system::error_code(), ICON_NORMAL, ICON_USERS);
+		}
 		else {
 			setIcon(ICON_MSG);
 			onBlink(boost::system::error_code(), ICON_NORMAL, ICON_MSG);
