@@ -18,7 +18,7 @@
 
 #define _WIN32_IE 0x0500
 
-#define USERAGENT SITENAME " Notifier 1.0.1 (Windows)"
+#define USERAGENT SITENAME " Notifier 1.0.3 (Windows)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -117,7 +117,7 @@ public:
 	
 	virtual void initialize() {
 		Notifier::initialize();
-		popups = (getConfigValue("popups") == "true");
+		popups = (getConfigValue("popups") != "false");
 		updateMenu();
 	}
 
@@ -491,6 +491,11 @@ void cbPowerBroadcast(HWND hwnd, WPARAM w, LPARAM l)
 	if (w == PBT_APMRESUMEAUTOMATIC) {
 		std::cout << "Wake notification received; trying reconnect" << std::endl;
 		notiRunloop.post(boost::bind(&Notifier::reconnect, &notifier));
+	}
+	else if (w == PBT_APMSUSPEND) {
+		// Will the disconnect always be scheduled in our notifier runloop before we're asleep?
+		notiRunloop.dispatch(boost::bind(&Notifier::disconnect, &notifier));
+		std::cout << "Sleep notification received; disconnected" << std::endl;
 	}
 }
 // }}}

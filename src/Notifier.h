@@ -146,12 +146,7 @@ private:
 
 	void connect()
 	{
-		reconnectTimer.reset();
-
-		if (ilmp) {
-			ilmp->close();
-			ilmp.reset();
-		}
+		disconnect();
 		
 		toStatus(s_connecting);
 
@@ -232,9 +227,10 @@ private:
 		else if (cmd == "online") {
 			std::string name; params.next(name);
 			int id; params.next(id);
+			int silent; params.tryNext(silent, 0);
 			bool wasOnline = (users.find(id) != users.end());
 			users[id] = User(id, name);
-			if (!wasOnline) {
+			if (!wasOnline && !silent) {
 				std::stringstream msg; msg << name << " is nu online";
 				notify(SITENAME, msg.str(), openUrl, false, false);
 			}
@@ -307,7 +303,8 @@ private:
 		}
 	}
 
-	boost::asio::io_service::work *waitForInit;
+	// runloopWork will force our ioService to keep running until we quit().
+	boost::asio::io_service::work *runloopWork;
 public:
 #ifndef USERAGENT
 	#define USERAGENT "Notifier [unknown; " __DATE__ ", " __TIME__ "]"
@@ -318,14 +315,13 @@ public:
 			status(s_disconnected), retryTime(5), retries(3), userCb(0), reconnectTimer(),
 			isUpdating(false), neededAuthorization(false) {
 
-		waitForInit = new boost::asio::io_service::work(ioService);
+		runloopWork = new boost::asio::io_service::work(ioService);
 	}
 
 	virtual void initialize() {
 #ifdef DEBUG
 		std::cout << "initialize" << std::endl;
 #endif
-		delete waitForInit;
 		connect();
 	}
 
@@ -367,11 +363,22 @@ public:
 		connect();
 	}
 
+	void disconnect()
+	{
+		reconnectTimer.reset();
+		if (ilmp) {
+			ilmp->close();
+			ilmp.reset();
+			toStatus(s_disconnected);
+		}
+	}
+
 	virtual void quit()
 	{
 		if (ilmp) ilmp->close();
 		ilmp.reset();
 		reconnectTimer.reset();
+		delete runloopWork;
 	}
 
 	void open()

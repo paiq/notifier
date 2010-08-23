@@ -19,7 +19,7 @@
 #import <Cocoa/Cocoa.h>
 #import <GrowlApplicationBridge.h>
 
-#define USERAGENT SITENAME " Notifier 1.0 (Mac)"
+#define USERAGENT SITENAME " Notifier 1.0.1 (Mac)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -576,10 +576,16 @@ HANDLER(Open, open)
 		[self menuWillOpen:menu]; // Update if menu is rendered
 }
 
-- (void) receiveWakeNote: (NSNotification*) note
+- (void) receiveWakeNote:(NSNotification*)note
 {
 	NSLog(@"Wake notification received; trying reconnect");
 	notiRunloop.post(boost::bind(&Notifier::reconnect, &notifier));
+}
+
+- (void) receiveSleepNote:(NSNotification*)note
+{
+	notiRunloop.dispatch(boost::bind(&Notifier::disconnect, &notifier));
+	NSLog(@"Sleep notification received; disconnected");
 }
 
 - (void) applicationDidFinishLaunching:(NSNotification *)notification
@@ -607,8 +613,11 @@ HANDLER(Open, open)
 	}
 
 	NSLog(@"Subscribing to system wake notifications");
-	//[[[NSWorkspace sharedWorkspace] notificationCenter] addObserver: self 
-    //		selector: @selector(receiveSleepNote:) name: NSWorkspaceWillSleepNotification object: NULL];
+	[[[NSWorkspace sharedWorkspace] notificationCenter] addObserver: self 
+	                                                       selector: @selector(receiveSleepNote:)
+	                                                           name: NSWorkspaceWillSleepNotification
+	                                                         object: nil];
+	
 	[[[NSWorkspace sharedWorkspace] notificationCenter] addObserver: self 
 	                                                       selector: @selector(receiveWakeNote:)
 	                                                           name: NSWorkspaceDidWakeNotification

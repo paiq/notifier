@@ -10,7 +10,8 @@
 #else
 	#define SITEHOST "paiq.nl"
 	#define ILMPHOST "paiq.nl"
-	#define ILMPPORT "80"
+	#define ILMPPORT "28712"
+// Port 28712 works around some firewalls that think they should proxy :80 traffic.
 	#define ILMPSITEDIR "paiq.nl"
 	#define UPDATEHOST "paiq.nl"
 #endif
