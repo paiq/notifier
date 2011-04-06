@@ -17,7 +17,7 @@
  */
 
 #import <Cocoa/Cocoa.h>
-#import <GrowlApplicationBridge.h>
+#import <TinyGrowlClient.h>
 
 #define USERAGENT SITENAME " Notifier 1.0.1 (Mac)"
 	// Used by server to determine whether we should update 
@@ -82,25 +82,21 @@ void uiRunloopPost(SEL selector, ...)
 
 	[[NSApp delegate] performSelectorOnMainThread: selector
 	                                   withObject: options
-	                                waitUntilDone: NO];
+	                                waitUntilDone: false];
 	
 	[options release];
 }
 
 class MacNotifier : public Notifier
 {
-	bool popups;
-	
 	// Delegating menu updates {{{
 	NSMutableArray *tooltipArray;
 	void updateMenu()
 	{
 		NSNumber *nsStatus = [[NSNumber alloc] initWithInt: status];
-		NSNumber *nsPopups = [[NSNumber alloc] initWithBool: popups];
 		
-		uiRunloopPost(@selector(setMenu:), nsStatus, nsPopups, tooltipArray, 0);
+		uiRunloopPost(@selector(setMenu:), nsStatus, tooltipArray, 0);
 
-		[nsPopups release];
 		[nsStatus release];
 	}
 	// }}}
@@ -139,7 +135,7 @@ class MacNotifier : public Notifier
 	
 public:
 	MacNotifier(boost::asio::io_service& ioService_) :
-			Notifier(ioService_), popups(false), tooltipArray(0), iconIcon(ICON_GRAY), iconTitle(@""),
+			Notifier(ioService_), tooltipArray(0), iconIcon(ICON_GRAY), iconTitle(@""),
 			blinkTimer() {
 	}
 
@@ -151,13 +147,6 @@ public:
 		[iconTitle release];
 	}
 	
-	void togglePopups()
-	{
-		popups = !popups;
-		setConfigValue("popups", popups ? "true" : "false");
-		updateMenu();
-	}
-	
 	void setMotdSong(std::string& motd)
 	{
 		if (status != s_enabled) return;
@@ -166,7 +155,6 @@ public:
 	
 	virtual void initialize() {
 		Notifier::initialize();
-		popups = (getConfigValue("popups") == "true");
 		updateMenu();
 	}
 	
@@ -199,8 +187,6 @@ public:
 	
 	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio)
 	{
-		if (!prio && !popups) return;
-		
 		NSString *nsTitle = [[NSString alloc] initWithStdString: title];
 		NSString *nsText = [[NSString alloc] initWithStdString: text];
 		NSString *nsUrl = [[NSString alloc] initWithStdString: url];
@@ -401,27 +387,28 @@ public:
 		// (Try to) clean up /tmp/NotifierUpdate; we assume we have a pool in place here.
 		NSFileManager *fm = [NSFileManager defaultManager];
 
-		if ([fm respondsToSelector:@selector(removeItemAtPath:error:)]) // >= 10.5
-			[fm removeItemAtPath:@"/tmp/WebNotiUpdate" error:nil];
-		else if ([fm respondsToSelector:@selector(removeFileAtPath:handler:)]) // < 10.5
-			[fm removeFileAtPath:@"/tmp/WebNotiUpdate" handler:nil];
+		[fm removeFileAtPath:@"/tmp/WebNotiUpdate" handler:nil];
+		// [fm removeItemAtPath:@"/tmp/WebNotiUpdate" error:nil];
+		// The latter is the preferred way of doing things >= 10.5
 	}
 };
 
 MacNotifier notifier(notiRunloop); // Static initialization of the concrete notifier.
 
 // AppDelegate {{{
-@interface AppDelegate : NSObject<GrowlApplicationBridgeDelegate
+@interface AppDelegate : NSObject
 #if (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_5)
-,NSMenuDelegate
+<NSMenuDelegate>
 #endif
-> {
+{
 	NSStatusItem *statusItem;
 	NSMenu *menu;
 	NSArray *menuOpts;
 	
 	bool menuOpened;
 	bool iTunesToMotto;
+
+	TinyGrowlClient *growl;
 }
 @end
 
@@ -441,19 +428,18 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	if (![title length] || ![text length]) return;
 		// Growl does not support removing notifications (!?)
 
-	[GrowlApplicationBridge notifyWithTitle: title
-	                            description: text
-	                       notificationName: @"notifications"
-	                               iconData: [[NSImage imageNamed:ICON_APP] TIFFRepresentation]
-	                               priority: 1
-	                               isSticky: sticky && [sticky boolValue]
-	                           clickContext: url ? url : @"none"
-	                             identifier: @"notification"];
+	[growl notifyWithType:@"notification"
+	                title:title
+	          description:text
+	         clickContext:url ? url : @""];
 }
 
 - (void) setIcon:(NSArray *)opts
 {
-	NSLog(@"setIcon! %@", opts);
+#ifdef DEBUG
+	NSLog(@"setIcon: %@", opts);
+#endif
+
 	NSString* icon = [opts objectAtIndex: 0];
 	NSString* text = [opts objectAtIndex: 1];
 	
@@ -464,51 +450,23 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 }
 
 // Menu rendering and handling {{{
-#define HANDLER(dm, nm) - (void) menu ## dm ## Handler:(id)sender { notiRunloop.post(boost::bind(&Notifier::nm, &notifier)); }
-HANDLER(Open, open)
+- (void) menuOpenHandler:(id)sender		{ notiRunloop.post(boost::bind(&Notifier::open, &notifier)); }
+- (void) menuLoginHandler:(id)sender	{ notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, true, true)); }
+- (void) menuLogoutHandler:(id)sender	{ notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, false, true)); }
+- (void) menuAboutHandler:(id)sender	{ notiRunloop.post(boost::bind(&Notifier::about, &notifier)); }
+- (void) menuQuitHandler:(id)sender		{ notiRunloop.post(boost::bind(&Notifier::quit, &notifier)); }
 
-/*- (void) menuOpenHandler:(id)sender
-{
-	notiRunloop.post(boost::bind(&Notifier::open, &notifier));
-}*/
-
-- (void) menuLoginHandler:(id)sender
-{
-	notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, true, true));
-}
-
-- (void) menuLogoutHandler:(id)sender
-{
-	notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, false, true));
-}
-
-- (void) menuAboutHandler:(id)sender
-{
-	notiRunloop.post(boost::bind(&Notifier::about, &notifier));
-}
-
-- (void) menuPopupsHandler:(id)sender
-{
-	notiRunloop.post(boost::bind(&MacNotifier::togglePopups, &notifier));
-}
-
-- (void) menuQuitHandler:(id)sender
-{
-	notiRunloop.post(boost::bind(&Notifier::quit, &notifier));
-}
-
-- (void) menuWillClose:(NSMenu *)_menu
-{
-	menuOpened = NO;
+- (void) menuWillClose:(NSMenu *)_menu	{
+	menuOpened = false;
 }
 
 - (void) menuWillOpen:(NSMenu *)_menu
 {
 	// assert _menu == menu
 	
-	menuOpened = YES;
+	menuOpened = true;
 
-	// [menu removeAllItems] is not supported on older platforms.
+	// [menu removeAllItems] is only supported >= 10.6
 	while ([menu numberOfItems])
 		[menu removeItemAtIndex:0];
 	
@@ -533,12 +491,12 @@ HANDLER(Open, open)
 	
 	if (item) [menu addItem:[NSMenuItem separatorItem]];
 	
-	NSArray *tooltip = [menuOpts objectAtIndex: 2];
+	NSArray *tooltip = [menuOpts objectAtIndex: 1];
 	
 	if (tooltip && [tooltip count] > 0) {
 		for (int i = 0; i < [tooltip count]; i++) {
 			item = [menu addItemWithTitle:[tooltip objectAtIndex: i] action:nil keyEquivalent: @""];
-			[item setEnabled: NO];
+			[item setEnabled: false];
 		}
 
 		[menu addItem:[NSMenuItem separatorItem]];
@@ -546,11 +504,8 @@ HANDLER(Open, open)
 	
 	if (status == s_connected)
 		[menu addItemWithTitle: [NSString stringWithUTF8String: SITENAME " openen"] action: @selector(menuOpenHandler:) keyEquivalent: @""];
-	else if (status == s_enabled) {
+	else if (status == s_enabled)
 		[menu addItemWithTitle: @"Uitloggen" action: @selector(menuLogoutHandler:) keyEquivalent: @""];
-		item = [menu addItemWithTitle: @"Popups" action: @selector(menuPopupsHandler:) keyEquivalent: @""];
-		if ([[menuOpts objectAtIndex: 1] boolValue]) [item setState: NSOnState];
-	}
 
 	if (optionKey)
 		[menu addItemWithTitle: @"Versie informatie" action: @selector(menuAboutHandler:) keyEquivalent: @""];
@@ -559,8 +514,11 @@ HANDLER(Open, open)
 	
 	if (status == s_enabled && (optionKey || iTunesToMotto)) {
 		[menu addItem: [NSMenuItem separatorItem]];
-		
-		item = [menu addItemWithTitle: @"iTunes ⇢ what's up?!" action:@selector(iTunesSettingChanged:) keyEquivalent:@""];
+
+		NSString *text = [NSString stringWithUTF8String:"iTunes \xe2\x87\xa2 what's up?!"]; 
+			// due to compiler bug not detecting when a static string should be put in a utf-16 container
+
+		item = [menu addItemWithTitle:text action:@selector(iTunesSettingChanged:) keyEquivalent:@""];
 		[item setState: (iTunesToMotto ? NSOnState : NSOffState)];
 	}
 }
@@ -590,27 +548,17 @@ HANDLER(Open, open)
 
 - (void) applicationDidFinishLaunching:(NSNotification *)notification
 {
-	menuOpened = NO;
-	iTunesToMotto = NO;
+	menuOpened = false;
+	iTunesToMotto = false;
 	menuOpts = 0;
 
 	NSLog(@"Registering Growl delegate");
-	try {
-		[GrowlApplicationBridge setGrowlDelegate:self];
-		if (![GrowlApplicationBridge isGrowlInstalled]) throw 1;
-	}
-	catch (...) {
-		NSString *growlReminder = [[NSUserDefaults standardUserDefaults] stringForKey:@"growlReminder"];
-
-		if (growlReminder == nil || growlReminder == @"true") {
-			int r = NSRunAlertPanel(@"Growl niet geinstalleerd", @"We kunnen geen notificaties tonen zolang Growl niet geinstalleerd is.",
-					@"Ga naar website", @"Herinner me niet meer", @"Nu even niet");
-			if (r == NSAlertDefaultReturn)
-				[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"http://growl.info/"]];
-			else if (r == NSAlertAlternateReturn)
-				[[NSUserDefaults standardUserDefaults] setObject:@"false" forKey:@"growlReminder"];
-		}
-	}
+	[growl release];
+	growl = [TinyGrowlClient new];
+	[growl setDelegate:self];
+	[growl setAppName:[NSString stringWithUTF8String: SITENAME " notifier"]];
+	[growl setAllNotifications: [NSArray arrayWithObjects: @"notification", nil]];
+	[growl registerApplication];
 
 	NSLog(@"Subscribing to system wake notifications");
 	[[[NSWorkspace sharedWorkspace] notificationCenter] addObserver: self 
@@ -625,7 +573,7 @@ HANDLER(Open, open)
 
 	NSLog(@"Adding StatusBar item");
 	statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength] retain];
-	[statusItem setHighlightMode:YES];
+	[statusItem setHighlightMode:true];
 	[self setIcon:[NSArray arrayWithObjects: ICON_GRAY, @"", nil]];
 	
 	NSImage *i = [NSImage imageNamed:ICON_ALT];
@@ -651,21 +599,34 @@ HANDLER(Open, open)
 	[super dealloc];
 }
 
-// Growl protocol {{{
-- (void) growlNotificationWasClicked: (id)clickContext
+// tinygrowl protocol {{{
+- (void) tinyGrowlClient:(TinyGrowlClient*)sender didClick:(id)clickContext
 {
 	if ([clickContext length])
 		notiRunloop.post(boost::bind(&MacNotifier::openUrl, &notifier, [clickContext stdString]));
 }
 
-- (NSDictionary *) registrationDictionaryForGrowl {
-	return [NSDictionary dictionaryWithObjectsAndKeys:
-				[NSArray arrayWithObjects: @"notifications", nil], GROWL_NOTIFICATIONS_ALL,
-				[NSArray arrayWithObjects: @"notifications", nil], GROWL_NOTIFICATIONS_DEFAULT, nil];
-}
+static bool showingReminder = false;
+- (void)tinyGrowlClient:(TinyGrowlClient*)sender didChangeRunning:(bool)running
+{
+	if (!showingReminder && !running) {
+		NSString *growlReminder = [[NSUserDefaults standardUserDefaults] stringForKey:@"growlReminder"];
 
-- (NSString *) applicationNameForGrowl {
-	return [NSString stringWithUTF8String: SITENAME " notifier"];
+		if (![growlReminder isEqualToString:@"false"]) { 
+			showingReminder = true;
+			int r = NSRunAlertPanel(@"Growl niet geinstalleerd",
+					@"We kunnen geen notificaties tonen zolang Growl niet actief is. Als Growl wel geinstalleerd is, is deze wellicht uitgeschakeld in Systeemvoorkeuren.",
+					@"Ga naar www.growl.info", @"Herinner me niet meer", @"Nu even niet");
+
+			if (r == NSAlertDefaultReturn) [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"http://growl.info/"]];
+			else if (r == NSAlertAlternateReturn) [[NSUserDefaults standardUserDefaults] setObject:@"false" forKey:@"growlReminder"];
+
+			showingReminder = false;
+		}
+	}
+ 	else if (showingReminder && running) [NSApp abortModal]; 
+
+	if (menuOpened) [self menuWillOpen:menu]; // update if menu is rendered
 }
 // }}}
 
@@ -703,7 +664,7 @@ HANDLER(Open, open)
 
     loginDict = [NSDictionary dictionaryWithObjectsAndKeys:
         appPath, @"Path",
-        [NSNumber numberWithBool:NO], @"Hide",
+        [NSNumber numberWithBool:false], @"Hide",
         nil, nil];
     [loginItems addObject:loginDict];
 
@@ -745,21 +706,10 @@ HANDLER(Open, open)
 {	
 	iTunesToMotto = !iTunesToMotto;
 	[item setState: (iTunesToMotto ? NSOnState : NSOffState)];
-	
-	if (iTunesToMotto) {
-		NSLog(@"Registering for iTunes notifications");
 
-		[[NSDistributedNotificationCenter defaultCenter] addObserver: self
-		                                                    selector: @selector(iTunesChanged:)
-		                                                        name: @"com.apple.iTunes.playerInfo"
-		                                                      object: nil];
-	}
-	else {
-		[[NSDistributedNotificationCenter defaultCenter] removeObserver: self
-		                                                           name: @"com.apple.iTunes.playerInfo"
-		                                                         object: nil];
-	}
-
+	NSDistributedNotificationCenter* dnc = [NSDistributedNotificationCenter defaultCenter];
+	if (iTunesToMotto) [dnc addObserver:self selector:@selector(iTunesChanged:) name: @"com.apple.iTunes.playerInfo" object: nil];
+	else [dnc removeObserver:self name: @"com.apple.iTunes.playerInfo" object: nil];
 }
 
 // }}}

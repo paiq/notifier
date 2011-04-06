@@ -1,9 +1,14 @@
+#
+# Paiq notifier framework - http://opensource.implicit-link.com/
+# Copyright 2010 Implicit Link
+#
+
 TARGETS  	:= paiq-release paiq-debug nextlover-release nextlover-debug
-PLATFORMS	:= linux win32 darwin
+PLATFORMS	:= win32 linux linux64 darwin darwin64
 
-PLATFORM := $(if $(PWD),$(patsubst CYGWIN_%,win32,$(subst Linux,linux,$(subst Darwin,darwin,$(shell uname)))),win32native)
-
-isWin32Native = $(filter win32native,$(PLATFORM))
+# host platform specific configuration {{{
+HOST_PLATFORM := $(if $(PWD),$(patsubst CYGWIN_%,win32,$(subst Linux,linux,$(subst Darwin,darwin,$(shell uname)))),win32native)
+isWin32Native = $(filter win32native,$(HOST_PLATFORM))
 
 ifeq ($(isWin32Native),)
 	# linux / darwin / win32
@@ -18,69 +23,80 @@ else
 		# Pretty ugly, but works in most cases. Parameters should not end with \n though.
 endif
 
-DARWIN_GRAWL	:= Growl
-		# or Growl-WithInstaller, but this explodes the bundle.
+ERROR			:= @$(call echo,Unable to build this target on a $(HOST_PLATFORM) platform.) && $(binfalse)
 
-getSite		= $(word 1,$(subst -, ,$(1)))
-getVariant	= $(word 2,$(subst -, ,$(1)))
-isDebug		= $(filter debug, $(call getVariant,$(1)))
-
-ERROR			:= @$(call echo,Unable to build this target on a $(PLATFORM) platform.) && $(binfalse)
-
-GPP				:= g++
-WINDRES.win32	:= windres
-
-# Additional CFLAGS / LFLAGS can also be supplied on the cli.
-CFLAGS.release	:= $(CFLAGS) -Iext/ilmpclient -Iext/dsa_verify -Os
-CFLAGS.debug	:= $(CFLAGS.release) -g -DILMPDEBUG -DDEBUG
-CFLAGS.darwin.release	:= $(CFLAGS.release) -Iext/$(DARWIN_GRAWL).framework/Headers
-CFLAGS.darwin.debug		:= $(CFLAGS.debug) -Iext/$(DARWIN_GRAWL).framework/Headers
-
-LFLAGS			:= $(LFLAGS) -lboost_system
-LFLAGS.release  := $(LFLAGS) -s
-LFLAGS.win32    := $(LFLAGS) -lws2_32
-LFLAGS.win32.release    := $(LFLAGS.release) -lws2_32 -mwindows
-LFLAGS.darwin			:= $(LFLAGS) -framework Cocoa -Fext/ -framework $(DARWIN_GRAWL)
-LFLAGS.darwin.release	:= $(LFLAGS.release) -framework Cocoa -Fext/ -framework $(DARWIN_GRAWL)
-LFLAGS.linux			:= $(LFLAGS) -lboost_thread
-LFLAGS.linux.release	:= $(LFLAGS.release) -lboost_thread
-
-DSA_VERIFY_SRCS := $(wildcard ext/dsa_verify/*.c)
+GPP				:= $(ERROR)
+AR				:= $(ERROR)
+WINDRES			:= $(ERROR)
 
 define HostTempl.linux
- GPP.darwin			:= $(if $(shell i686-apple-darwin9-g++ --version 2>/dev/null),i686-apple-darwin9-g++,$(ERROR))
- GPP.win32			:= $(if $(shell i586-mingw32msvc-g++ --version 2>/dev/null),i586-mingw32msvc-g++,$(ERROR))
- WINDRES.win32		:= i586-mingw32msvc-windres
+	GPP.linux			:= g++
+	GPP.linux64			:= g++
+	AR.linux			:= ar
+	AR.linux64			:= ar
+
+	$(if $(shell i686-apple-darwin9-g++ --version 2>/dev/null),
+ 	GPP.darwin		:= i686-apple-darwin9-g++
+	GPP.darwin64	:= i686-apple-darwin9-g++
+	AR.darwin		:= i686-apple-darwin9-ar
+	AR.darwin64		:= i686-apple-darwin9-ar,)
+
+	$(if $(shell i586-mingw32msvc-g++ --version 2>/dev/null),
+ 	GPP.win32		:= i586-mingw32msvc-g++
+	AR.win32		:= i586-mingw32msvc-ar
+	WINDRES.win32	:= i586-mingw32msvc-windres,)
 endef
 
 define HostTempl.win32
- GPP.darwin			:= $(ERROR)
- GPP.linux			:= $(ERROR)
- GPP.win32			:= g++-3 -mno-cygwin
+	GPP.win32			:= g++-3 -mno-cygwin
+	AR.win32			:= ar
+	WINDRES.win32		:= windres
 endef
 
 define HostTempl.win32native
- GPP.darwin			:= $(ERROR)
- GPP.linux			:= $(ERROR)
+	GPP.win32			:= g++
+	AR.win32			:= ar
 endef
 
 define HostTempl.darwin
- GPP.linux			:= $(ERROR)
- GPP.win32			:= $(ERROR)
+	GPP.darwin			:= g++
+	GPP.darwin64		:= g++
+	AR.darwin			:= ar
+	AR.darwin64			:= ar
 endef
 
-$(eval $(call HostTempl.$(PLATFORM)))
+$(eval $(call HostTempl.$(HOST_PLATFORM)))
+# }}}
 
-# var resolves a 'specialized' variable. Tries VAR.{platform}.{variant}, VAR.{platform}, VAR.{variant}, VAR.
-var = $(strip $(or $($1.$2.$(call getVariant,$3)),$($1.$2),$($1.$(call getVariant,$3)),$($(1))))
+# Additional CFLAGS / LFLAGS can also be supplied on the cli.
+CFLAGS.release	:= $(CFLAGS) -Os
+CFLAGS.debug	:= $(CFLAGS) -g -DILMPDEBUG -DDEBUG
+CFLAGS.darwin64.release	:= $(CFLAGS.release) -m64
+CFLAGS.darwin64.debug	:= $(CFLAGS.debug) -m64
+CFLAGS.linux64.release	:= $(CFLAGS.release) -m64
+CFLAGS.linux64.debug	:= $(CFLAGS.debug) -m64
 
+LFLAGS.release  := $(LFLAGS) -s
+LFLAGS.debug	:= $(LFLAGS)
+
+# functions {{{
+getPlatform = $(word 1,$(subst -, ,$(1)))
+getSite		= $(word 2,$(subst -, ,$(1)))
+getVariant	= $(word 3,$(subst -, ,$(1)))
+isDebug		= $(filter debug, $(call getVariant,$(1)))
+
+# resolves a 'specialized' variable. Tries VAR.{platform}.{variant}, VAR.{platform}, VAR.{variant}, VAR.
+var = $(strip $(or $($1.$(call getPlatform,$2).$(call getVariant,$2)),$($1.$(call getPlatform,$2)),$($1.$(call getVariant,$2)),$($(1))))
+# }}}
+
+# basic targets {{{
 info:
 	@$(call echo,Platform=$(PLATFORM))
 	@$(call echo,Targets: $(strip $(foreach p,$(PLATFORMS),$(foreach t,$(TARGETS), \
-		$(if $(filter $(ERROR),$(call var,GPP,$(p),$(t))),, \
+		$(if $(filter $(ERROR),$(call var,GPP,$(p)-$(t))),, \
 		\n $(p)-$(t) \
-			(GPP=$(call var,GPP,$(p),$(t)), CFLAGS=$(call var,CFLAGS,$(p),$(t)), \
-			LFLAGS=$(call var,LFLAGS,$(p),$(t)) ))))))
+			(GPP=$(call var,GPP,$(p)-$(t)), CFLAGS=$(call var,CFLAGS,$(p)-$(t)), \
+			LFLAGS=$(call var,LFLAGS,$(p)-$(t)) ))))))
 	
 clean:
 	$(if $(isWin32Native), \
@@ -96,17 +112,28 @@ _init-%:
 	$(if $(isWin32Native), \
 		@if not exist "build\$*" mkdir "build\$*", \
 		@mkdir -p build/$*) 
+# }}}
 
-### win32 builds WebNoti.exe ###
+### dsa_verify library {{{
 
-build/win32-%/WebNoti.exe: build/win32-%/WindowsNotifier.o build/win32-%/WindowsNotifierRes.o $(DSA_VERIFY_SRCS)
-	$(call var,GPP,win32,$*) $^ -o $@ $(call var,LFLAGS,win32,$*)
+build/%/dsa_verify_mp_math.o: ext/dsa_verify/mp_math.c ext/dsa_verify/*.h
+	$(call var,GPP,$*) $(call var,CFLAGS,$*) -o $@ -c $<
+
+build/%/dsa_verify_sha1.o: ext/dsa_verify/sha1.c ext/dsa_verify/*.h
+	$(call var,GPP,$*) $(call var,CFLAGS,$*) -o $@ -c $<
+
+build/%/dsa_verify_dsa_verify.o: ext/dsa_verify/dsa_verify.c ext/dsa_verify/*.h
+	$(call var,GPP,$*) $(call var,CFLAGS,$*) -o $@ -c $<
+
+build/%/dsa_verify.a: build/%/dsa_verify_mp_math.o build/%/dsa_verify_sha1.o build/%/dsa_verify_dsa_verify.o
+	$(call var,AR,$*) -rs $@ $^ 
+# }}}
+
+### win32 builds WebNoti.exe {{{ 
 
 build/win32-%/WindowsNotifier.o: src/WindowsNotifier.cpp src/Notifier.h ext/ilmpclient/*.h ext/dsa_verify/*.h
-	$(call var,GPP,win32,$*) \
-		$(call var,CFLAGS,win32,$*) \
-		-c -o $@ -include src/SiteSpecifics.$(call getSite,$*).h \
-		$<
+	$(call var,GPP,win32,$*) $(call var,CFLAGS,win32,$*) \
+		-include src/SiteSpecifics.$(call getSite,$*).h -c -o $@ $<
 
 build/win32-%/WindowsNotifierRes.o: src/WindowsNotifier.cpp
 	$(if $(isWin32Native), \
@@ -121,43 +148,46 @@ build/win32-%/WindowsNotifierRes.o: src/WindowsNotifier.cpp
 # TODO: Implement something for win32native here:
 #       http://stackoverflow.com/questions/3389902/advanced-grep-perl-like-text-file-processing-on-win32
 
-### darwin builds WebNoti.app ###
+build/win32%/WebNoti.exe: build/win32-%/WindowsNotifier.o build/win32-%/WindowsNotifierRes.o build/win32-%/dsa_verify.o
+	$(call var,GPP,win32$*) $^ -o $@ $(call var,LFLAGS,win32$*)
+# }}}
 
-build/darwin-%/WebNoti.app: res/darwin-info.plist
-	@$(call echo,Preparing app bundle structure)
-	@mkdir -p build/darwin-$*/WebNoti.app/Contents
-	cp $< build/darwin-$*/WebNoti.app/Contents/Info.plist
-	@mkdir -p build/darwin-$*/WebNoti.app/Contents/Frameworks
-	@test -d build/darwin-$*/WebNoti.app/Contents/Framework/$(DARWIN_GRAWL).framework || \
-		($(call echo,Copying $(DARWIN_GRAWL) framework) && \
-		(cp -R ext/$(DARWIN_GRAWL).framework build/darwin-$*/WebNoti.app/Contents/Frameworks/))
+### darwin builds WebNoti.app {{{
 
-build/darwin-%/WebNoti.app/Contents/Resources: src/MacNotifier.mm
-	# Copy resources annotated in our source file to Contents/Resources/
-	@mkdir -p build/darwin-$*/WebNoti.app/Contents/Resources
-	$(shell perl -nle 'print "cp $$2 build/darwin-$*/WebNoti.app/Contents/Resources/$$1;" \
-		if /"(.*)"\s*\/\/\s*\$$RESOURCE\$$\s*\"(.*)\"\s*$$/' < $< | sed 's/$$SITE/$(call getSite,$*)/g')
+build/darwin%/MacNotifier.o: src/MacNotifier.mm src/Notifier.h ext/ilmpclient/*.h ext/dsa_verify/*.h ext/tinygrowl/*.h
+	$(call var,GPP,darwin$*) $(call var,CFLAGS,darwin$*) \
+		-Iext/ilmpclient -Iext/dsa_verify -Iext/tinygrowl \
+		-include src/SiteSpecifics.$(call getSite,darwin$*).h -c -o $@ $<
 
-build/darwin-%/MacNotifier.o: src/MacNotifier.mm src/Notifier.h ext/ilmpclient/*.h ext/dsa_verify/*.h
-	$(call var,GPP,darwin,$*) \
-		$(call var,CFLAGS,darwin,$*) \
-		-c -o $@ -include src/SiteSpecifics.$(call getSite,$*).h \
-		$<
+build/darwin%/tinygrowl.o: ext/tinygrowl/TinyGrowlClient.m ext/tinygrowl/*.h
+	$(call var,GPP,darwin$*) $(call var,CFLAGS,darwin$*) -c -o $@ $<
 
-build/darwin-%/WebNoti.app/Contents/MacOS/Notifier: build/darwin-%/MacNotifier.o $(DSA_VERIFY_SRCS) build/darwin-%/WebNoti.app 
-	@mkdir -p build/darwin-$*/WebNoti.app/Contents/MacOS
-	$(call var,GPP,darwin,$*) $< $(DSA_VERIFY_SRCS) $(call var,LFLAGS,darwin,$*) -o $@
+build/darwin%/WebNoti.app: res/darwin-info.plist
+	mkdir -p build/darwin$*/WebNoti.app/Contents
+	cp $< build/darwin$*/WebNoti.app/Contents/Info.plist
 
-### linux builds ConsoleNotifier ###
+# Copy resources annotated in our source file to Contents/Resources/
+build/darwin%/WebNoti.app/Contents/Resources: src/MacNotifier.mm
+	mkdir -p build/darwin$*/WebNoti.app/Contents/Resources
+	$(shell perl -nle 'print "cp $$2 build/darwin$*/WebNoti.app/Contents/Resources/$$1;" \
+		if /"(.*)"\s*\/\/\s*\$$RESOURCE\$$\s*\"(.*)\"\s*$$/' < $< | sed 's/$$SITE/$(call getSite,darwin$*)/g')
 
-build/linux-%/ConsoleNotifier: build/linux-%/ConsoleNotifier.o $(DSA_VERIFY_SRCS)
-	$(call var,GPP,linux,$*) $(call var,LFLAGS,linux,$*) $^ -o $@
+build/darwin%/WebNoti.app/Contents/MacOS/Notifier: build/darwin%/MacNotifier.o build/darwin%/tinygrowl.o build/darwin%/dsa_verify.a
+	mkdir -p build/darwin$*/WebNoti.app/Contents/MacOS
+	$(call var,GPP,darwin$*) $(call var,LFLAGS,darwin$*) -framework Cocoa -lSystem -lboost_system -o $@ $^
+# }}}
 
-build/linux-%/ConsoleNotifier.o: src/ConsoleNotifier.cpp src/Notifier.h ext/ilmpclient/*.h
-	$(call var,GPP,linux,$*) \
-		$(call var,CFLAGS,linux,$*) \
-		-c -o $@ -include src/SiteSpecifics.$(call getSite,$*).h \
-		$<
+### linux builds ConsoleNotifier {{{
+
+build/linux%/ConsoleNotifier.o: src/ConsoleNotifier.cpp src/Notifier.h ext/ilmpclient/*.h
+	$(call var,GPP,linux$*) $(call var,CFLAGS,linux$*) \
+		-Iext/ilmpclient -Iext/dsa_verify \
+		-include src/SiteSpecifics.$(call getSite,linux$*).h -c -o $@ $< 
+
+build/linux%/ConsoleNotifier: build/linux%/ConsoleNotifier.o build/linux%/dsa_verify.a
+	$(call var,GPP,linux$*) $(call var,LFLAGS,linux$*) -lboost_system -lboost_thread -o $@ $^
+
+# }}}
 
 define TargetTempl
  win32-$(1): _init-win32-$(1) build/win32-$(1)/WebNoti.exe
@@ -166,8 +196,14 @@ define TargetTempl
  linux-$(1): _init-linux-$(1) build/linux-$(1)/ConsoleNotifier
  clean-linux-$(1): _clean-linux-$(1)
 
+ linux64-$(1): _init-linux64-$(1) build/linux64-$(1)/ConsoleNotifier
+ clean-linux64-$(1): _clean-linux64-$(1)
+
  darwin-$(1): _init-darwin-$(1) build/darwin-$(1)/WebNoti.app build/darwin-$(1)/WebNoti.app/Contents/Resources build/darwin-$(1)/WebNoti.app/Contents/MacOS/Notifier
  clean-darwin-$(1): _clean-darwin-$(1)
+
+ darwin64-$(1): _init-darwin64-$(1) build/darwin64-$(1)/WebNoti.app build/darwin64-$(1)/WebNoti.app/Contents/Resources build/darwin64-$(1)/WebNoti.app/Contents/MacOS/Notifier
+ clean-darwin64-$(1): _clean-darwin64-$(1)
 endef
 
 $(foreach t,$(TARGETS), $(eval $(call TargetTempl,$(t))))
