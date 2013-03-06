@@ -34,6 +34,8 @@
 
 #include "dsa_verify.h"
 
+#define APPNAME (SITENAME " App")
+
 using boost::asio::ip::tcp;
 
 typedef std::pair<int, std::string> User;
@@ -140,6 +142,7 @@ private:
 	{
 		cookie = getConfigValue("cookie");
 
+		(IlmpCommand(ilmp.get(), "Notifier.checkForUpdate") << userAgent << boost::bind(&Notifier::updateAvailable, this, _1)).send();
 		(IlmpCommand(ilmp.get(), "User.client") << cookie << userAgent << boost::bind(&Notifier::cbClient, this, _1) << 8).send();
 		(IlmpCommand(ilmp.get(), "Notifier.streamStats") << boost::bind(&Notifier::cbStats, this, _1)).send();
 	}
@@ -155,6 +158,13 @@ private:
 		ilmp->onError = boost::bind(&Notifier::onIlmpError, this, _1, _2);
 
 		ilmp->connect();
+	}
+
+	void updateAvailable(StringTokenWalker& params)
+	{
+		// Update push on backend protocol level.
+		std::string updateUrl; params.tryNext(updateUrl, "");
+		needUpdate(updateUrl);
 	}
 
 	void cbClient(StringTokenWalker& params)
@@ -188,7 +198,7 @@ private:
 		else if (cmd == "reload") {
 			std::cout << "Got 'reload' command; scheduling reconnect" << std::endl;
 			
-			notify(SITENAME, "Sessie afgesloten door de server", "", false, true);
+			notify(APPNAME, "Verbinding verbroken", "", false, true);
 			setConfigValue("enabled", "false");
 			userCb = 0;
 			ioService.post(boost::bind(&Notifier::reconnect, this));
@@ -219,7 +229,7 @@ private:
 			
 			toStatus(s_enabled);
 			if (neededAuthorization) {
-				notify(SITENAME, "De notifier is nu online", openUrl, false, true);
+				notify(APPNAME, "Verbonden!", openUrl, false, true);
 				neededAuthorization = false;
 			}
 			return;
@@ -325,6 +335,12 @@ public:
 		connect();
 	}
 
+	void logout()
+	{
+		if (ilmp) (IlmpCommand(ilmp.get(), "Client.killByCookie") << cookie).send();
+		setEnabled(false,true);
+	}
+
 	void setEnabled(bool enabled, bool userAction)
 	{
 #ifdef DEBUG
@@ -340,13 +356,12 @@ public:
 			// associated with a user.
 			if (!(isEnabled && userId) && userCb) {
 				userCb->cancel();
-				notify(SITENAME, "De notifier is nu uitgelogd", "", false, true);
 			}
 
 			if (isEnabled && !userId) {
 				std::stringstream loginUrl; loginUrl << "http://" SITEHOST "/authorize?c=" << cookie;
 				if (userAction) openUrl(loginUrl.str());
-				else notify(SITENAME, "De notifier is uitgelogd, klik hier om in te loggen", loginUrl.str(), true, true);
+				else notify(APPNAME, "Klik hier om in te loggen.", loginUrl.str(), true, true);
 			}
 			else if (isEnabled && !userCb)
 				(IlmpCommand(ilmp.get(), "Notifier.streamUser") << boost::bind(&Notifier::cbUser, this, _1) >> &userCb).send();
@@ -389,12 +404,12 @@ public:
 	void about()
 	{
 		std::stringstream msg;
-		msg << SITENAME << " Notifier\n"
+		msg << SITENAME << " App\n"
 			<< "User-Agent \"" << userAgent << "\"\n" 
 			<< "Compiled at " << __DATE__ << ", " << __TIME__ << "\n"
 			<< "\n"
-			<< "Copyright 2005-2010 Implicit-Link";
-		notify(SITEEXTNAME, msg.str(), "http://opensource.implicit-link.com/", false, true);
+			<< "Copyright 2005-2013 Implicit-Link";
+		notify(APPNAME, msg.str(), "http://opensource.implicit-link.com/", false, true);
 	}
 
 	// Invoked when any of status, !!users.size(), !!unreadMsgs changes.
@@ -415,10 +430,10 @@ public:
 			ttItems.push_back("Bezig met updaten...");
 		
 		std::stringstream statusStr;
-		statusStr << SITENAME " notifier: ";
+		statusStr << SITENAME " App: ";
 		if (status == s_disconnected) statusStr << "offline";
-		else if (status == s_connecting) statusStr << "verbinding maken";
-		else if (status == s_connected) statusStr << "uitgelogd";
+		else if (status == s_connecting) statusStr << "verbinding maken..";
+		else if (status == s_connected) statusStr << "niet ingelogd";
 		else statusStr << "online (" << userName << ")";
 		
 		ttItems.push_back(statusStr.str());
@@ -446,9 +461,11 @@ public:
 		}
 		
 		if (status == s_connected || (status == s_enabled && ttItems.size() <= 1)) {
-			std::stringstream statsStr;
-			statsStr << (maleUsers + femaleUsers) << " leden, " << onlineUsers << " online";
-			ttItems.push_back(statsStr.str());
+			std::stringstream statsStr1, statsStr2;
+			statsStr1 << onlineUsers << " leden nu online";
+			ttItems.push_back(statsStr1.str());
+			statsStr2 << (maleUsers + femaleUsers) << " afgelopen week online";
+			ttItems.push_back(statsStr2.str());
 		}
 
 		tooltip(ttItems);

@@ -18,7 +18,7 @@
 
 #define _WIN32_IE 0x0500
 
-#define USERAGENT SITENAME " Notifier 1.0.3 (Windows)"
+#define USERAGENT SITENAME " Notifier/1.2.0 (Windows)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -61,6 +61,7 @@ extern "C" void tss_cleanup_implemented() { }
 #define DO_LOGOUT		1006 
 #define DO_TOGGLEPOPUPS	1007 
 #define DO_VISIT		1008
+#define DO_OFFLINE		1009 
 // }}}
 
 void showBalloon(const std::string&, const std::string&, const std::string&);
@@ -402,25 +403,17 @@ void setMenu(int status, bool popups)
 {
 	if (hMenu) DestroyMenu(hMenu);
 	hMenu = CreatePopupMenu();
-
-	if (status == s_connected)
-		AppendMenu(hMenu, MF_STRING, DO_VISIT, "&" SITENAME " openen");
-	else if (status == s_enabled) {
-		AppendMenu(hMenu, MF_STRING, DO_LOGOUT, "&Uitloggen");
+	
+	AppendMenu(hMenu, MF_STRING | (status==s_enabled ? MF_CHECKED : MF_UNCHECKED), (status==s_enabled ? DO_OFFLINE : DO_LOGIN), "&Online");
+	if (status == s_enabled) {
 		AppendMenu(hMenu, MF_STRING | (popups ? MF_CHECKED : MF_UNCHECKED), DO_TOGGLEPOPUPS, "&Popups");
+		AppendMenu(hMenu, MF_STRING, DO_LOGOUT, "&Uitloggen");
 	}
 
 	AppendMenu(hMenu, MF_STRING, DO_EXIT, "&Afsluiten");
 
-	if (status != s_connecting) {
-		AppendMenu(hMenu, MF_SEPARATOR, 0, 0);
-		if (status == s_enabled)
-			AppendMenu(hMenu, MF_STRING, DO_VISIT, "&" SITENAME " openen");
-		else if (status == s_disconnected)
-			AppendMenu(hMenu, MF_STRING, DO_LOGIN, "Notifier verbinden");
-		else if (status == s_connected)
-			AppendMenu(hMenu, MF_STRING, DO_LOGIN, "Notifier inloggen");
-	}
+	AppendMenu(hMenu, MF_SEPARATOR, 0, 0);
+	AppendMenu(hMenu, MF_STRING, DO_VISIT, "&Naar " SITENAME);
 }
 
 // -- Window event message callbacks
@@ -448,7 +441,8 @@ void cbTrayNotify(HWND hwnd, WPARAM w, LPARAM l)
 		POINT point;
 		GetCursorPos(&point);
 		SetForegroundWindow(hwnd);
-		TrackPopupMenu(hMenu, TPM_RIGHTALIGN, point.x, point.y, 0, hwnd, 0);
+		if (hMenu)
+			TrackPopupMenu(hMenu, TPM_RIGHTALIGN, point.x, point.y, 0, hwnd, 0);
 		SendMessage(hwnd, WM_NULL, 0, 0);
 	}
 	else if (l == NIN_BALLOONUSERCLICK) {
@@ -469,6 +463,8 @@ void cbCommand(HWND hwnd, WPARAM w, LPARAM l)
 	else if (w == DO_LOGIN)
 		notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, true, true));
 	else if (w == DO_LOGOUT)
+		notiRunloop.post(boost::bind(&Notifier::logout, &notifier));
+	else if (w == DO_OFFLINE)
 		notiRunloop.post(boost::bind(&Notifier::setEnabled, &notifier, false, true));
 	else if (w == DO_TOGGLEPOPUPS)
 		notiRunloop.post(boost::bind(&WindowsNotifier::togglePopups, &notifier));
@@ -483,6 +479,7 @@ void cbDestroy(HWND hwnd, WPARAM w, LPARAM l)
 	Shell_NotifyIcon(NIM_DELETE, &niData);
  	
 	DestroyMenu(hMenu);
+	hMenu = false;
 	PostQuitMessage(0);
 }
 

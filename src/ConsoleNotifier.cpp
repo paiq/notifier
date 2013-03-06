@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define USERAGENT SITENAME " Notifier 0.1 (Linux)"
+#define USERAGENT SITENAME " Notifier/1.2.0 (Linux)"
 
 #include <unistd.h>
 #include <string>
@@ -34,7 +34,7 @@ class ConsoleNotifier : public Notifier
 public:
 	ConsoleNotifier(boost::asio::io_service& ioService_) : Notifier(ioService_) {}
 
-	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky)
+	virtual void notify(const std::string& title, const std::string& text, const std::string& url, bool sticky, bool prio)
 	{
 		std::cout	<< "Notify:  " << title << std::endl
 					<< "         " << text << std::endl

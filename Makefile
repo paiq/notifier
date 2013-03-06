@@ -1,4 +1,4 @@
-TARGETS  	:= paiq-release paiq-debug nextlover-release nextlover-debug
+TARGETS  	:= paiq-release paiq-debug
 PLATFORMS	:= linux win32 darwin
 
 PLATFORM := $(if $(PWD),$(patsubst CYGWIN_%,win32,$(subst Linux,linux,$(subst Darwin,darwin,$(shell uname)))),win32native)
@@ -32,13 +32,15 @@ WINDRES.win32	:= windres
 
 # Additional CFLAGS / LFLAGS can also be supplied on the cli.
 CFLAGS.release	:= $(CFLAGS) -Iext/ilmpclient -Iext/dsa_verify -Os
-CFLAGS.debug	:= $(CFLAGS.release) -g -DILMPDEBUG -DDEBUG
+CFLAGS.debug	:= $(CFLAGS.release) -g -O0 -DILMPDEBUG -DDEBUG
 CFLAGS.darwin.release	:= $(CFLAGS.release) -Iext/$(DARWIN_GRAWL).framework/Headers
 CFLAGS.darwin.debug		:= $(CFLAGS.debug) -Iext/$(DARWIN_GRAWL).framework/Headers
+CFLAGS.win32.release	:= $(CFLAGS.release) -D_WIN32_WINNT=0x0501 -DWINVER=0x0501
+CFLAGS.win32.debug		:= $(CFLAGS.debug) -D_WIN32_WINNT=0x0501 -DWINVER=0x0501
 
 LFLAGS			:= $(LFLAGS) -lboost_system
-LFLAGS.release  := $(LFLAGS) -s
-LFLAGS.win32    := $(LFLAGS) -lws2_32
+LFLAGS.release  := $(LFLAGS)
+LFLAGS.win32    := $(LFLAGS) -lws2_32 -s # the -s flag mysteriously crashes the notifier on OSX
 LFLAGS.win32.release    := $(LFLAGS.release) -lws2_32 -mwindows
 LFLAGS.darwin			:= $(LFLAGS) -framework Cocoa -Fext/ -framework $(DARWIN_GRAWL)
 LFLAGS.darwin.release	:= $(LFLAGS.release) -framework Cocoa -Fext/ -framework $(DARWIN_GRAWL)
@@ -48,7 +50,8 @@ LFLAGS.linux.release	:= $(LFLAGS.release) -lboost_thread
 DSA_VERIFY_SRCS := $(wildcard ext/dsa_verify/*.c)
 
 define HostTempl.linux
- GPP.darwin			:= $(if $(shell i686-apple-darwin9-g++ --version 2>/dev/null),i686-apple-darwin9-g++,$(ERROR))
+ GPP.darwin			:= $(if $(shell i686-apple-darwin11-g++-4.7 --version 2>/dev/null),i686-apple-darwin11-g++-4.7,$(ERROR))
+ STRIP.darwin		:= $(if $(shell i686-apple-darwin11-g++-4.7 --version 2>/dev/null),i686-apple-darwin11-strip,$(ERROR))
  GPP.win32			:= $(if $(shell i586-mingw32msvc-g++ --version 2>/dev/null),i586-mingw32msvc-g++,$(ERROR))
  WINDRES.win32		:= i586-mingw32msvc-windres
 endef
@@ -101,6 +104,7 @@ _init-%:
 
 build/win32-%/WebNoti.exe: build/win32-%/WindowsNotifier.o build/win32-%/WindowsNotifierRes.o $(DSA_VERIFY_SRCS)
 	$(call var,GPP,win32,$*) $^ -o $@ $(call var,LFLAGS,win32,$*)
+	i586-mingw32msvc-strip $@
 
 build/win32-%/WindowsNotifier.o: src/WindowsNotifier.cpp src/Notifier.h ext/ilmpclient/*.h ext/dsa_verify/*.h
 	$(call var,GPP,win32,$*) \
@@ -147,6 +151,7 @@ build/darwin-%/MacNotifier.o: src/MacNotifier.mm src/Notifier.h ext/ilmpclient/*
 build/darwin-%/WebNoti.app/Contents/MacOS/Notifier: build/darwin-%/MacNotifier.o $(DSA_VERIFY_SRCS) build/darwin-%/WebNoti.app 
 	@mkdir -p build/darwin-$*/WebNoti.app/Contents/MacOS
 	$(call var,GPP,darwin,$*) $< $(DSA_VERIFY_SRCS) $(call var,LFLAGS,darwin,$*) -o $@
+	$(call var,STRIP,darwin,$*) $@
 
 ### linux builds ConsoleNotifier ###
 

@@ -19,7 +19,7 @@
 #import <Cocoa/Cocoa.h>
 #import <GrowlApplicationBridge.h>
 
-#define USERAGENT SITENAME " Notifier 1.0.1 (Mac)"
+#define USERAGENT SITENAME " Notifier/1.2.0 (Mac)"
 	// Used by server to determine whether we should update 
 
 #ifdef DEBUG 
@@ -421,7 +421,6 @@ MacNotifier notifier(notiRunloop); // Static initialization of the concrete noti
 	NSArray *menuOpts;
 	
 	bool menuOpened;
-	bool iTunesToMotto;
 }
 @end
 
@@ -527,9 +526,9 @@ HANDLER(Open, open)
 	if (status == s_enabled)
 		item = [menu addItemWithTitle: [NSString stringWithUTF8String: SITENAME " openen"] action: @selector(menuOpenHandler:) keyEquivalent: @""];
 	else if (status == s_disconnected)
-		item = [menu addItemWithTitle: @"Notifier verbinden" action: @selector(menuLoginHandler:) keyEquivalent: @""];
+		item = [menu addItemWithTitle: @"App verbinden" action: @selector(menuLoginHandler:) keyEquivalent: @""];
 	else if (status == s_connected)
-		item = [menu addItemWithTitle: @"Notifier inloggen" action: @selector(menuLoginHandler:) keyEquivalent: @""];
+		item = [menu addItemWithTitle: @"App inloggen" action: @selector(menuLoginHandler:) keyEquivalent: @""];
 	
 	if (item) [menu addItem:[NSMenuItem separatorItem]];
 	
@@ -553,16 +552,10 @@ HANDLER(Open, open)
 	}
 
 	if (optionKey)
-		[menu addItemWithTitle: @"Versie informatie" action: @selector(menuAboutHandler:) keyEquivalent: @""];
+		[menu addItemWithTitle: @"App info" action: @selector(menuAboutHandler:) keyEquivalent: @""];
 
 	[menu addItemWithTitle: @"Afsluiten" action: @selector(menuQuitHandler:) keyEquivalent: @""];
 	
-	if (status == s_enabled && (optionKey || iTunesToMotto)) {
-		[menu addItem: [NSMenuItem separatorItem]];
-		
-		item = [menu addItemWithTitle: @"iTunes ⇢ what's up?!" action:@selector(iTunesSettingChanged:) keyEquivalent:@""];
-		[item setState: (iTunesToMotto ? NSOnState : NSOffState)];
-	}
 }
 // }}}
 
@@ -591,7 +584,6 @@ HANDLER(Open, open)
 - (void) applicationDidFinishLaunching:(NSNotification *)notification
 {
 	menuOpened = NO;
-	iTunesToMotto = NO;
 	menuOpts = 0;
 
 	NSLog(@"Registering Growl delegate");
@@ -665,7 +657,7 @@ HANDLER(Open, open)
 }
 
 - (NSString *) applicationNameForGrowl {
-	return [NSString stringWithUTF8String: SITENAME " notifier"];
+	return [NSString stringWithUTF8String: SITENAME " App"];
 }
 // }}}
 
@@ -722,47 +714,6 @@ HANDLER(Open, open)
 }
 // }}}
 
-// iTunes to motto {{{
-
-// Very basic implementation: only artist/name, and only on notifications. Using 
-// scripting bridge to get data immediately (allowing a better implementation)
-// is significantly more complex.
-
-- (void) iTunesChanged:(NSNotification *)notification
-{
-	NSDictionary *itunes = [notification userInfo];
-	NSString *motto = @"";
-	
-	if ([[itunes objectForKey:@"Player State"] isEqualToString:@"Playing"])
-		motto = [NSString stringWithFormat:@"%@ - %@", [itunes objectForKey:@"Artist"], [itunes objectForKey:@"Name"]];
-	
-	NSLog(@"iTunes: %@", motto);
-	
-	notiRunloop.post(boost::bind(&MacNotifier::setMotdSong, &notifier, [motto stdString]));
-}
-
-- (void) iTunesSettingChanged:(NSMenuItem *)item
-{	
-	iTunesToMotto = !iTunesToMotto;
-	[item setState: (iTunesToMotto ? NSOnState : NSOffState)];
-	
-	if (iTunesToMotto) {
-		NSLog(@"Registering for iTunes notifications");
-
-		[[NSDistributedNotificationCenter defaultCenter] addObserver: self
-		                                                    selector: @selector(iTunesChanged:)
-		                                                        name: @"com.apple.iTunes.playerInfo"
-		                                                      object: nil];
-	}
-	else {
-		[[NSDistributedNotificationCenter defaultCenter] removeObserver: self
-		                                                           name: @"com.apple.iTunes.playerInfo"
-		                                                         object: nil];
-	}
-
-}
-
-// }}}
 
 - (void) notiThread: (id)ignore
 {
