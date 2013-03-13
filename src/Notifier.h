@@ -29,10 +29,10 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/algorithm/string/join.hpp>
 
-#include "IlmpStream.h"
-#include "TokenWalker.h"
+#include "../ext/ilmpclient/IlmpStream.h"
+#include "../ext/ilmpclient/TokenWalker.h"
 
-#include "dsa_verify.h"
+#include "../ext/dsa_verify/dsa_verify.h"
 
 #define APPNAME (SITENAME " App")
 
