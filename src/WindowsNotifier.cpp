@@ -46,10 +46,10 @@ extern "C" void tss_cleanup_implemented() { }
 #define strCopy(s, t) t[s.copy(t, sizeof(t)-1)] = '\0'
 
 // UI constants {{{
-#define ICON_NORMAL	1000 // $RESOURCE$ "res/normal.$SITE.ico"
-#define ICON_GRAY	2000 // $RESOURCE$ "res/gray.$SITE.ico"
-#define ICON_USERS	2001 // $RESOURCE$ "res/users.$SITE.ico"
-#define ICON_MSG	2002 // $RESOURCE$ "res/msg.$SITE.ico"
+#define ICON_NORMAL	1000 // $RESOURCE$ "res/normal.ico"
+#define ICON_GRAY	2000 // $RESOURCE$ "res/gray.ico"
+#define ICON_USERS	2001 // $RESOURCE$ "res/users.ico"
+#define ICON_MSG	2002 // $RESOURCE$ "res/msg.ico"
 #define WM_TRAYNOTIFY			(WM_USER + 1000)
 #define NIN_BALLOONTIMEOUT		(WM_USER + 4)
 #define NIN_BALLOONUSERCLICK	(WM_USER + 5)

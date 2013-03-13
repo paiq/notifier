@@ -113,15 +113,9 @@ build/win32-%/WindowsNotifier.o: src/WindowsNotifier.cpp src/Notifier.h ext/ilmp
 		$<
 
 build/win32-%/WindowsNotifierRes.o: src/WindowsNotifier.cpp
-	$(if $(isWin32Native), \
-		(echo 1000 ICON "res/normal.$(call getSite,$*).ico" & \
-		echo 2000 ICON "res/gray.$(call getSite,$*).ico" & \
-		echo 2001 ICON "res/users.$(call getSite,$*).ico" & \
-		echo 2002 ICON "res/msg.$(call getSite,$*).ico"), \
 		perl -nle 'print "$$1 ICON $$2" if /([0-9]+)\s*\/\/\s*\$$RESOURCE\$$\s*(\".*\")\s*$$/' < $< \
-				| sed 's/$$SITE/$(call getSite,$*)/g' ) \
-			| $(call var,WINDRES,win32,$*) -o $@
-
+				| sed 's/[.]ico/~$(call getSite,$*).ico/g' \
+				| $(call var,WINDRES,win32,$*) -o $@
 # TODO: Implement something for win32native here:
 #       http://stackoverflow.com/questions/3389902/advanced-grep-perl-like-text-file-processing-on-win32
 
