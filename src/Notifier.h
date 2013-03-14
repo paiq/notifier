@@ -142,7 +142,9 @@ private:
 	{
 		cookie = getConfigValue("cookie");
 
+#ifdef DSA_PUBLIC_KEY
 		(IlmpCommand(ilmp.get(), "Notifier.checkForUpdate") << userAgent << boost::bind(&Notifier::updateAvailable, this, _1)).send();
+#endif
 		(IlmpCommand(ilmp.get(), "User.client") << cookie << userAgent << boost::bind(&Notifier::cbClient, this, _1) << 8).send();
 		(IlmpCommand(ilmp.get(), "Notifier.streamStats") << boost::bind(&Notifier::cbStats, this, _1)).send();
 	}
@@ -158,13 +160,6 @@ private:
 		ilmp->onError = boost::bind(&Notifier::onIlmpError, this, _1, _2);
 
 		ilmp->connect();
-	}
-
-	void updateAvailable(StringTokenWalker& params)
-	{
-		// Update push on backend protocol level.
-		std::string updateUrl; params.tryNext(updateUrl, "");
-		needUpdate(updateUrl);
 	}
 
 	void cbClient(StringTokenWalker& params)
@@ -480,12 +475,20 @@ public:
 	
 	virtual std::string getConfigValue(const std::string& name) { return ""; }
 	virtual bool setConfigValue(const std::string& name, const std::string& value) { return false; }
-	
+
+
 	// Update logic {{{
 	
-	// Http fetcher {{{
 	typedef boost::function<void(boost::asio::streambuf*)> FetchCallback;
-		
+
+#ifdef DSA_PUBLIC_KEY
+	void updateAvailable(StringTokenWalker& params)
+	{
+		// Update push on backend protocol level.
+		std::string updateUrl; params.tryNext(updateUrl, "");
+		needUpdate(updateUrl);
+	}
+
 	void fetch(std::string &host, std::string &port, std::string &path, FetchCallback cb)
 	{
 		// Asynchronous http fetch		
@@ -592,8 +595,6 @@ public:
 					this, socket, responseBuf, cb, boost::asio::placeholders::error));
 		}
 	}
-	
-	// }}}
 
 	void updaterRun(const std::string& _url, FetchCallback gotUpdateCb)
 	{
@@ -672,8 +673,10 @@ public:
 			const char* blob = boost::asio::buffer_cast<const char*>(blobBuf->data());
 
 			std::cout << "  Got binary, length=" << blobLen << std::endl;
+			
+			const unsigned char pubKey[] = DSA_PUBLIC_KEY;
 
-			int verify = dsa_verify_blob(blob, blobLen, sigS.c_str(), sigR.c_str());
+			int verify = dsa_verify_blob(blob, blobLen, pubKey, sigS.c_str(), sigR.c_str());
 
 			if (verify == 1) {
 				std::cout << "  DSA signature checks out" << std::endl;
@@ -687,7 +690,12 @@ public:
 		isUpdating = false;
 		dataChanged();
 	}
-		
+#else
+
+	void updaterRun(const std::string& _url, FetchCallback gotUpdateCb)
+	{
+	}
+#endif		
 	// }}}
 
 };
