@@ -229,6 +229,12 @@ private:
 			}
 			return;
 		}
+        else if (cmd == "selfOnline") {
+            notify(APPNAME, "Je bent weer online!", openUrl, false, true);
+        }
+        else if (cmd == "selfOffline") {
+            notify(APPNAME, "Je bent weer offline!", openUrl, false, true);
+        }
 		else if (cmd == "online") {
 			std::string name; params.next(name);
 			int id; params.next(id);
