@@ -1,7 +1,7 @@
 Notifier
 ========
 
-This project contains the paiq.nl instant message notifier client. It aims at demonstrating a practical implementation of the [ilmpclient](http://github.com/ImplicitLink/ilmpclient) library.
+This project contains the paiq.nl instant message notifier client. It aims at demonstrating a practical implementation of the [ilmpclient](http://github.com/paiq/ilmpclient) library.
 
 There are three different applications:
 
@@ -11,7 +11,7 @@ There are three different applications:
 
 Source checkout
 ---------------
-There are two git submodule references in the source tree, [ilmpclient](http://github.com/ImplicitLink/ilmpclient) and [dsa_verify](http://github.com/ImplicitLink/dsa_verify). After cloning the git repository you should checkout these dependencies using `git submodule init; git submodule update`.
+There are two git submodule references in the source tree, [ilmpclient](http://github.com/paiq/ilmpclient) and [dsa_verify](http://github.com/paiq/dsa_verify). After cloning the git repository you should checkout these dependencies using `git submodule init; git submodule update`.
 
 Compilation
 -----------
